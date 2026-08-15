@@ -8,11 +8,12 @@
 | [`triage-notes`](#triage-notes) | メモを調査して GitHub Issue を起票する | メモのファイルまたはテキスト | `/triage-notes` のみ |
 | [`ship-issues`](#ship-issues) | 既存 Issue 群を並列ワーカーに割って PR 化する | Issue 番号の並び | `/ship-issues` のみ |
 | [`issue-pr`](#issue-pr) | Issue 1 件を PR 1 件として実装する | Issue 番号 | `/issue-pr` のみ |
+| [`pr-ready`](#pr-ready) | 現在ブランチの作業を diff 確認 → 検証 → コミット → PR にする | Issue 番号（任意） | `/pr-ready` のみ |
 | [`ship-notes`](#ship-notes) | メモ → Issue → PR を通しで回す | メモのファイルまたはテキスト | `/ship-notes` のみ |
 | [`pr-review`](#pr-review) | PR を独立した立場でレビューする | PR 番号 | `/pr-review` のみ |
 | [`worktree-sweep`](#worktree-sweep) | 残った worktree と不要ブランチを掃除する | スクリプトへ渡すオプション | `/worktree-sweep` のみ |
 
-`cm` 以外の 6 つは `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
+`cm` 以外の 7 つは `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
 起動しません。`cm` だけは `user-invocable: true` で、コミット時にモデルからも選ばれます。
 
 ## スキル間の関係
@@ -23,6 +24,7 @@
 メモ ──/triage-notes──> Issue 群
 Issue 群 ─/ship-issues─> 依存分析 → ウェーブ → ワーカー → PR 群
 Issue ───/issue-pr───> PR                 （ship-issues のワーカーが踏襲する単位）
+ブランチ上の作業 ─/pr-ready─> PR          （Issue なしでも可。cm のコミット規約を内包）
 
 /ship-notes = /triage-notes → /ship-issues を繋ぐだけ
 /pr-review  = PR → レビュー結果            （独立・どこからも呼ばれない）
@@ -36,6 +38,8 @@ Issue ───/issue-pr───> PR                 （ship-issues のワー�
 - ワーカーは `ship-issues` が起こします。Issue ごとに Agent tool で
   `isolation: "worktree"` のワーカーを1つ立て、`issue-pr` のワークフローを踏襲させます。
   オーケストレータ本体では実装しません。
+- Issue から始めるなら `/issue-pr`、手元で書き終えた作業を PR にするなら `/pr-ready`。
+  `pr-ready` は実装をせず、既にブランチにある変更を確認・検証・コミットして PR にするだけです。
 - `pr-review` は他スキルから呼ばれません。PR ができた後に手動で回します。
 - `worktree-sweep` は `ship-issues` が残す worktree とブランチの後始末です。
   `ship-issues` の最終ステップで同じスクリプトを呼ぶため、通常は手で叩く必要はありません。
@@ -50,7 +54,7 @@ Issue の設計と実装は必ず別フェーズに分け、**1 Issue = 1 PR、1
 
 | スキル | Codex での扱い |
 | --- | --- |
-| `cm` `triage-notes` `issue-pr` `pr-review` | `git` と `gh` にしか依存しないため概ね動く |
+| `cm` `triage-notes` `issue-pr` `pr-ready` `pr-review` | `git` と `gh` にしか依存しないため概ね動く |
 | `worktree-sweep` | `sh` / `git` / `gh` にしか依存しない。`~/.claude/scripts/worktree-sweep.sh` は Import の対象外なので、Codex 側では実体が要る |
 | `ship-issues` `ship-notes` | Claude Code の Agent tool と `isolation: "worktree"` が前提。Codex には対応機能が無いため動かない |
 
@@ -122,6 +126,25 @@ Issue 番号 1 件を受け取り、PR 1 件として実装します。Issue が
 - コミット前に base branch との差分全体を見て、スコープ外の変更・デバッグコード・
   生成物の巻き込みを取り除く
 - PR 本文は Summary / Why / Verification / Issue（`Closes #<number>`）の構成
+- force-push しない。マージしない
+
+## pr-ready
+
+現在ブランチで書き終えた作業を、diff 確認 → 検証 → コミット → push → PR 作成まで一息に
+持っていきます。**実装はしません**。既にブランチにある変更が対象です。
+
+- Issue 番号は任意引数。省略時はブランチ名（`123-foo` など）やコミットメッセージ（`#123`、
+  `Github-Issue:` トレーラ）から候補を出し、Issue を読んで一致を確認できたときだけ `Closes #N`
+  を付ける。確信が持てなければ閉じず、候補として報告する
+- default branch 上なら、未コミット変更だけのときは新ブランチを切って続行。default branch に
+  コミット済みのものがあれば止まって報告する
+- `git status` / `git diff` / base branch との差分全体を読み、無関係な変更・デバッグコード・
+  一時ファイル・生成物・lock ファイル・秘密情報・マシン固有パスを取り除く
+- `pr-review` と同じ観点（correctness / scope / 規約 / テスト）で自己レビューし、明らかな欠陥は直す
+- リポジトリ規定の検証を影響範囲から先に流す。無ければでっち上げない。既存の失敗は直さず記録
+- 未コミット変更は `cm` の規約でコミットする
+- 同ブランチの PR が既にあれば作らず報告。PR テンプレートがあればそれに従い、無ければ
+  Summary / Why / Verification / Issue の構成。作成ツールは `gh` に固定しない
 - force-push しない。マージしない
 
 ## ship-notes
