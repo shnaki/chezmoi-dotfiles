@@ -97,14 +97,26 @@ dot_*                   ~/ 直下の dotfiles
 
 `~/.claude` には手書きの設定と、Claude Code が生成するランタイム状態
 （`projects/`、`history.jsonl`、`.credentials.json` など、合計 100MB 超）が同居しています。
-管理対象は次の 4 ファイルだけで、残りは `.chezmoiignore` で明示的に除外しています。
+管理対象は次のものだけで、残りは `.chezmoiignore` で明示的に除外しています。
 
 | ソース | 配置先 | 内容 |
 | --- | --- | --- |
 | `dot_claude/settings.json` | `~/.claude/settings.json` | env / model / statusLine / enabledPlugins など |
 | `dot_claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | 全プロジェクト共通の言語ルール |
 | `dot_claude/output-styles/ja-concise.md` | `~/.claude/output-styles/ja-concise.md` | 日本語・簡潔応答スタイル |
-| `dot_claude/skills/cm/SKILL.md` | `~/.claude/skills/cm/SKILL.md` | Conventional Commits スキル |
+| `dot_claude/skills/*/SKILL.md` | `~/.claude/skills/*/SKILL.md` | スキル定義（下表） |
+
+### スキル
+
+いずれも `disable-model-invocation: true` で、スラッシュコマンドからのみ起動します。
+
+| スキル | 内容 |
+| --- | --- |
+| `cm` | Conventional Commits でコミットする |
+| `triage-notes` | メモを調査して GitHub Issue を起票する（実装しない） |
+| `issue-pr` | Issue 1件を PR 1件として実装する |
+| `ship-notes` | メモ → Issue → 並列ワーカー → PR を通しで回すオーケストレータ |
+| `pr-review` | PR を独立した立場でレビューする（変更しない） |
 
 `~/.claude` のパスは Windows / Linux ともに同じなので、OS ごとの分岐はありません。
 
