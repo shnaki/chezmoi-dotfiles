@@ -1,0 +1,23 @@
+{
+  "env": {
+    "DISABLE_FEEDBACK_COMMAND": "1",
+    "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1",
+    "DISABLE_ERROR_REPORTING": "1"
+  },
+  "model": "opus",
+  "statusLine": {
+    "type": "command",
+    "command": "npx -y ccstatusline@latest",
+    "padding": 0
+  },
+  "enabledPlugins": {
+    "github@claude-plugins-official": true
+  },
+  "outputStyle": "ja-concise",
+  "spinnerTipsEnabled": false,
+  "awaySummaryEnabled": false,
+  "autoUpdatesChannel": "latest",
+  "tui": "fullscreen",
+  "skipDangerousModePermissionPrompt": true,
+  "useAutoModeDuringPlan": true
+}

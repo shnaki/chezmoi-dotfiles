@@ -1,1 +1,9 @@
 *secret*.zsh
+
+# ~/.claude の認証情報・ランタイム生成物が誤って source に混入したときの保険
+dot_claude/dot_credentials.json
+dot_claude/dot_claude.json
+dot_claude/settings.local.json
+dot_claude/history.jsonl
+dot_claude/projects/
+dot_claude/backups/

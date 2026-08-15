@@ -11,3 +11,32 @@ AppData
 {{ if eq .chezmoi.os "windows" }}
 .config
 {{ end }}
+
+# ~/.claude はランタイム生成物と認証情報が設定ファイルと同居しているため、
+# 管理対象（settings.json / CLAUDE.md / output-styles / skills）以外は明示的に除外する
+.claude/.credentials.json
+.claude/.claude.json
+.claude/settings.local.json
+.claude/history.jsonl
+.claude/projects
+.claude/backups
+.claude/plugins
+.claude/file-history
+.claude/shell-snapshots
+.claude/tasks
+.claude/plans
+.claude/cache
+.claude/sessions
+.claude/session-env
+.claude/daemon
+.claude/scheduled-tasks
+.claude/statsig
+.claude/todos
+.claude/ide
+.claude/debug
+.claude/downloads
+.claude/paste-cache
+.claude/*-cache.json
+.claude/.last-*
+.claude/*.bak
+.claude/*.orig
