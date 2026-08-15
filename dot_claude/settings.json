@@ -5,6 +5,11 @@
     "DISABLE_ERROR_REPORTING": "1"
   },
   "model": "opus",
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
   "statusLine": {
     "type": "command",
     "command": "npx -y ccstatusline@latest",
