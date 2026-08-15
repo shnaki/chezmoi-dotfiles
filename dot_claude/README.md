@@ -13,6 +13,17 @@
 
 `~/.claude` のパスは Windows / Linux ともに同じなので、OS ごとの分岐はありません。
 
+## Codex の Import 元でもある
+
+`~/.claude` は Codex の Import 元も兼ねています。`settings.json` / `CLAUDE.md` /
+`skills/` を変更すると、Codex 側の `~/.agents/skills` と `~/.codex/AGENTS.md`、
+`~/.codex/config.toml` にも波及します。Codex 側は生成物として扱い、
+このリポジトリでは管理しません。詳細はルートの
+[README.md](../README.md#codex-との連携) を参照してください。
+
+**Codex 用に別のスキルを `~/.agents/skills` や `~/.codex/skills` へ手で置かないこと。**
+Import が上書きするため維持できません。
+
 ## 日本語化の担保
 
 「ユーザ向けの応答は日本語」というルールは 2 層に置いています。

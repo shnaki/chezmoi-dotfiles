@@ -37,6 +37,22 @@ Issue ───/issue-pr───> PR                 （ship-issues のワー�
 Issue の設計と実装は必ず別フェーズに分け、**1 Issue = 1 PR、1 ワーカー = 1 Issue** を守ります。
 いずれのスキルも PR をマージしません。
 
+## Codex への移植性
+
+これらのスキルは Codex の Import で `~/.agents/skills` にコピーされます
+（[ルート README](../../README.md#codex-との連携)）。ただし全部が動くわけではありません。
+
+| スキル | Codex での扱い |
+| --- | --- |
+| `cm` `triage-notes` `issue-pr` `pr-review` | `git` と `gh` にしか依存しないため概ね動く |
+| `ship-issues` `ship-notes` | Claude Code の Agent tool と `isolation: "worktree"` が前提。Codex には対応機能が無いため動かない |
+
+Codex が読む frontmatter は `name` と `description` だけです。
+`user-invocable` / `disable-model-invocation` / `argument-hint` は無視され、
+起動は `$<スキル名>` のメンションになります。`$ARGUMENTS` の展開もありません。
+
+**スキルは Claude Code の仕様に合わせて書き、Codex 向けの分岐は入れません。**
+
 ## cm
 
 現在の変更を Conventional Commits 形式でコミットします。
