@@ -6,28 +6,32 @@
 | --- | --- | --- | --- |
 | [`cm`](#cm) | Conventional Commits でコミットする | コミットメッセージまたは変更の説明 | `/cm`（モデルからの自動起動も可） |
 | [`triage-notes`](#triage-notes) | メモを調査して GitHub Issue を起票する | メモのファイルまたはテキスト | `/triage-notes` のみ |
+| [`ship-issues`](#ship-issues) | 既存 Issue 群を並列ワーカーに割って PR 化する | Issue 番号の並び | `/ship-issues` のみ |
 | [`issue-pr`](#issue-pr) | Issue 1 件を PR 1 件として実装する | Issue 番号 | `/issue-pr` のみ |
-| [`ship-notes`](#ship-notes) | メモ → Issue → 並列ワーカー → PR を通しで回す | メモのファイルまたはテキスト | `/ship-notes` のみ |
+| [`ship-notes`](#ship-notes) | メモ → Issue → PR を通しで回す | メモのファイルまたはテキスト | `/ship-notes` のみ |
 | [`pr-review`](#pr-review) | PR を独立した立場でレビューする | PR 番号 | `/pr-review` のみ |
 
-`cm` 以外の 4 つは `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
+`cm` 以外の 5 つは `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
 起動しません。`cm` だけは `user-invocable: true` で、コミット時にモデルからも選ばれます。
 
 ## スキル間の関係
 
-```
-メモ ──/triage-notes──> Issue                          （起票まで）
-     └─/ship-notes───> Issue ──ワーカー──> PR          （通しで実行）
-                                  └ 各ワーカーが issue-pr のワークフローを踏襲
+責務を段階で分け、上位のスキルは下位のワークフローを呼ぶだけにしています。
 
-Issue ──/issue-pr───> PR                               （1 件ずつ実装）
-PR ────/pr-review──> レビュー結果                      （独立・どこからも呼ばれない）
+```
+メモ ──/triage-notes──> Issue 群
+Issue 群 ─/ship-issues─> 依存分析 → ウェーブ → ワーカー → PR 群
+Issue ───/issue-pr───> PR                 （ship-issues のワーカーが踏襲する単位）
+
+/ship-notes = /triage-notes → /ship-issues を繋ぐだけ
+/pr-review  = PR → レビュー結果            （独立・どこからも呼ばれない）
 ```
 
-- `ship-notes` は triage 工程を内包します（「Perform the same process as the
-  `triage-notes` skill」）。`triage-notes` を別途呼ぶ必要はありません。
-- `ship-notes` は Issue ごとに Agent tool で `isolation: "worktree"` のワーカーを起こし、
-  各ワーカーに `issue-pr` のワークフローを踏襲させます。オーケストレータ本体では実装しません。
+- 起票だけしたいときは `/triage-notes`。既に Issue があるなら `/ship-issues` に
+  番号を渡します。メモから PR まで一息に回すときだけ `/ship-notes` を使います。
+- ワーカーは `ship-issues` が起こします。Issue ごとに Agent tool で
+  `isolation: "worktree"` のワーカーを1つ立て、`issue-pr` のワークフローを踏襲させます。
+  オーケストレータ本体では実装しません。
 - `pr-review` は他スキルから呼ばれません。PR ができた後に手動で回します。
 
 Issue の設計と実装は必ず別フェーズに分け、**1 Issue = 1 PR、1 ワーカー = 1 Issue** を守ります。
@@ -60,6 +64,28 @@ Issue の設計と実装は必ず別フェーズに分け、**1 Issue = 1 PR、1
   Investigation notes の構成。Investigation notes は参考情報であって実装指示ではない
 - 起票後に依存関係を分析し、実行ウェーブに分類する
 
+## ship-issues
+
+既に起票済みの Issue 番号を複数受け取り、並列ワーカーに割り当てて PR 化する
+オーケストレータです。本体では実装しません。
+
+- 引数は `101 102 103` / `#101 #102 #103` / `101,102,103` のいずれの形でも受け付け、
+  重複を除いた Issue リストに正規化する。指定外の Issue には手を出さない
+- 着手前に各 Issue を ready / already implemented / blocked / obsolete / duplicate /
+  needs investigation に分類し、既存 PR と競合する実装を起こさない
+- ready な Issue について影響範囲（API・共有型・スキーマ・マイグレーション・生成物・
+  lock ファイル・ルーティング・ビルド設定など）を見積もり、Issue 間の関係を
+  independent / potentially conflicting / semantically dependent /
+  ordered but independently valuable に分類する
+- ファイルが重ならないことは独立性の根拠にならない。バックエンドとフロントの
+  producer/consumer、マイグレーション順序、同一生成物の再生成などを見る
+- 実行ウェーブを組む。並列度の最大化より安全な並列度を優先し、理由なく直列化もしない
+- ウェーブ内は Agent tool で 1 呼び出し = 1 Issue、`isolation: "worktree"` 指定、
+  1 メッセージでまとめて並列起動する
+- ウェーブ完了ごとに残りを再評価する。初期計画に盲従しない
+- 未マージ PR への依存は明示的に扱う。暗黙の stacked branch を作らない
+- 最終出力は Pull Requests / Not implemented / Execution plan / Dependencies and conflicts
+
 ## issue-pr
 
 Issue 番号 1 件を受け取り、PR 1 件として実装します。Issue がスコープの境界です。
@@ -77,18 +103,18 @@ Issue 番号 1 件を受け取り、PR 1 件として実装します。Issue が
 
 ## ship-notes
 
-メモから PR までを通しで回すオーケストレータです。
+メモから PR までを通しで回します。実体は `triage-notes` と `ship-issues` を繋ぐだけの
+薄い合成で、固有のロジックは持ちません。
 
-1. **Phase 1** メモを triage して Issue を起票（`triage-notes` と同じ処理）
-2. **Phase 2** 起票した Issue をスコープ契約として凍結する。実装を楽にするための書き換えはしない
-3. **Phase 3** 影響範囲（モジュール／API／共有型／スキーマ／生成物／lock ファイル等）から
-   依存グラフを組み、実行ウェーブに分類する。ファイルが重ならないことは独立性の根拠にならない
-4. **Phase 4** ウェーブ内の Issue ごとに Agent tool でワーカーを起動。1 呼び出し = 1 Issue、
-   `isolation: "worktree"` 指定、同一ウェーブは 1 メッセージでまとめて並列起動
-5. **Phase 5-7** 結果を集約し、依存が判明したら後続ウェーブを組み直す。最後に
-   「1 Issue = 1 PR」が崩れていないかを検査する
+1. メモを `triage-notes` のワークフローで triage する
+2. Issue を起票する
+3. **新しく起票された actionable な Issue 番号だけ**を集める
+4. それらを `ship-issues` のワークフローで処理する
+5. 両者の結果を合わせて返す
 
-失敗は隠さず報告します。PR はマージしません。
+重複・obsolete・アクション不要と判断したメモは実装フェーズに渡しません。
+triage フェーズでは実装せず、実装開始後に Issue 境界を都合よく書き換えることもしません。
+PR はマージしません。
 
 ## pr-review
 
