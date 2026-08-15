@@ -5,6 +5,22 @@
     "DISABLE_ERROR_REPORTING": "1"
   },
   "model": "opus",
+  "permissions": {
+    "deny": ["mcp__Claude_Browser"]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "mcp__Claude_Browser__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo Browser pane is disabled because it crashes the Claude Desktop GPU process. See anthropics/claude-code#82967. Start the dev server with run_in_background and verify with curl or tests. 1>&2 && exit 2"
+          }
+        ]
+      }
+    ]
+  },
   "attribution": {
     "commit": "",
     "pr": "",

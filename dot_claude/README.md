@@ -6,7 +6,7 @@
 
 | ソース | 配置先 | 内容 |
 | --- | --- | --- |
-| `settings.json` | `~/.claude/settings.json` | env / model / attribution / statusLine / enabledPlugins など |
+| `settings.json` | `~/.claude/settings.json` | env / model / permissions / hooks / attribution / statusLine / enabledPlugins など |
 | `CLAUDE.md` | `~/.claude/CLAUDE.md` | 全プロジェクト共通の言語ルールとコミット / PR ルール |
 | `output-styles/ja-concise.md` | `~/.claude/output-styles/ja-concise.md` | 日本語・簡潔応答スタイル |
 | `skills/*/SKILL.md` | `~/.claude/skills/*/SKILL.md` | スキル定義（[skills/README.md](skills/README.md)） |
@@ -55,6 +55,41 @@ Import が上書きするため維持できません。
 一方で `attribution` は Claude Code にしか効かず、Codex や GitHub MCP 経由の PR 作成には
 届きません。`CLAUDE.md` は Import で `~/.codex/AGENTS.md` に波及するため両方に効きますが、
 強制力はありません。**どちらか片方では塞がらないため、冗長に見えても両方残してください。**
+
+## Browser pane を封じている
+
+Claude Desktop の Browser pane（dev サーバープレビュー）が Chromium の GPU プロセスを
+落とし、アプリ全体が無言終了します（[anthropics/claude-code#82967](https://github.com/anthropics/claude-code/issues/82967)）。
+
+- `main.log` に `GPU process gone: { reason: 'crashed', exitCode: 101457950 }` が 3 件。
+  うち 1 件は `[Preview] Created browser preview` の 1 秒後
+- 同時刻に `claude.ai-web.log` へ `CONTEXT_LOST_WEBGL`
+- TDR / Crashpad ダンプ / WER はなし。OS・ドライバレベルの問題ではない
+- ハードウェアアクセラレーションを無効にした状態でも再現する
+
+Browser pane 自体を切る設定は Claude Code 側に存在しません
+（`browserExternalPageTools` と `disableBrowserExternalNavigation` は外部サイトにしか
+効かず、localhost のプレビューは対象外）。そこで Claude に触らせない方向で 3 層置いています。
+
+- `settings.json` の `permissions.deny` — `mcp__Claude_Browser` を bare で deny する。
+  bare な deny はツールをコンテキストから除去し、`auto` / `bypassPermissions` を含む
+  全パーミッションモードで効く。これが主層
+- `settings.json` の `hooks.PreToolUse` — Desktop 内蔵サーバーに deny が届かなかった
+  場合の保険。`mcp__Claude_Browser__.*` に一致したら exit 2 でブロックし、代替手段を
+  stderr で Claude に返す。Windows ではフックが `cmd` で実行されるため、コマンドは
+  `cmd` / `sh` 双方で通る構文だけを使い、括弧・引用符・`;` を含めていない
+- `CLAUDE.md` の `# Browser pane` — 理由と代替手段（`run_in_background` + `curl`）を
+  与え、ブロックされたときに設定を書き換えて回避しようとするのを止める
+
+**ユーザー自身の操作は塞げません。** `Ctrl+Shift+B` で Browser pane を開く、チャット内の
+HTML / PDF / 画像 / 動画のパスをクリックする、といった操作は設定では止まらないので手で避けてください。
+
+プロジェクト側では `.claude/launch.json` に `"autoVerify": false` を入れると、編集のたびの
+自動検証（プレビュー起動）が止まります。これはプロジェクト単位の設定しかないため、
+このリポジトリでは管理せず各リポジトリで設定します。
+
+Issue が解決したら、`settings.json` の `permissions.deny` と `hooks.PreToolUse`、
+`CLAUDE.md` の `# Browser pane`、この節をまとめて削除してください。
 
 ## 注意
 
