@@ -10,6 +10,7 @@
 | `CLAUDE.md` | `~/.claude/CLAUDE.md` | 全プロジェクト共通の言語ルールとコミット / PR ルール |
 | `output-styles/ja-concise.md` | `~/.claude/output-styles/ja-concise.md` | 日本語・簡潔応答スタイル |
 | `skills/*/SKILL.md` | `~/.claude/skills/*/SKILL.md` | スキル定義（[skills/README.md](skills/README.md)） |
+| `scripts/*.sh` | `~/.claude/scripts/*.sh` | スキルから呼ぶシェルスクリプト（後述） |
 
 `~/.claude` のパスは Windows / Linux ともに同じなので、OS ごとの分岐はありません。
 
@@ -90,6 +91,45 @@ HTML / PDF / 画像 / 動画のパスをクリックする、といった操作�
 
 Issue が解決したら、`settings.json` の `permissions.deny` と `hooks.PreToolUse`、
 `CLAUDE.md` の `# Browser pane`、この節をまとめて削除してください。
+
+## worktree のゴミを掃除する
+
+`ship-issues` は Issue ごとに Agent tool の `isolation: "worktree"` でワーカーを立てます。
+このとき作られる worktree は**ワーカーが 1 度でもコミットすると自動削除の対象から外れる**
+ため、実行のたびにゴミが残り続けます。実測（`sf6-playbook`、掃除前）:
+
+| 種類 | 実測 | 状況 |
+| --- | --- | --- |
+| `worktree-agent-*` ブランチ | 15 本 | 全て main にマージ済み。ワーカーは別途 `NN-*` ブランチを切るので、このブランチは一度も使われない純粋なゴミ |
+| `NN-*` 作業ブランチ | 14 本 | PR マージ済み。ローカルに残ったまま |
+| `.claude/worktrees/agent-*/` | 6〜8 個 | `node_modules` 込みのフルチェックアウト。しかも `git worktree list` から登録が消えているため `git worktree prune` では落ちず、`git worktree remove` も効かない（ただのディレクトリになっている） |
+
+**Claude Code 側に自動削除の設定はありません。** `settings.json` の `worktree` オブジェクトが
+持つのは `baseRef`（`fresh` / `head`）と `bgIsolation`（`worktree` / `none`）だけで、掃除に
+関わるキーは存在せず、クリーンアップ用のコマンドもありません。設定で消せないか再調査しないこと。
+
+そこで `scripts/worktree-sweep.sh` を置いています。
+
+```bash
+sh ~/.claude/scripts/worktree-sweep.sh --dry-run
+```
+
+- 削除するのは「孤児 worktree ディレクトリ」「クリーンかつ HEAD が remote に届いている
+  登録済み worktree」「base branch にマージ済みのブランチ」「upstream が `[gone]` で、
+  かつ `gh` がマージ済み PR を確認できたブランチ」だけ
+- **オープンな PR のブランチは消えません**（upstream が生きていて未マージのため、
+  どの削除条件にも当たらない）
+- 未コミット変更のある worktree、HEAD が remote に無い worktree、`gh` で裏を取れない
+  ブランチは削除せず理由付きで報告する
+- 直近 60 分に更新された worktree は実行中のエージェントとみなしてスキップする（`--force` で解除）
+- カレントディレクトリが属する worktree とブランチには触らない
+
+呼び出し口は 2 つです。`ship-issues` の最終ステップ（ゴミの発生源）と、
+任意のタイミングで叩ける `/worktree-sweep` スキル。
+
+`--recursive` を付けると引数のディレクトリ配下を再帰的に走査します。既定のルートは
+持たせていないので、`sh ~/.claude/scripts/worktree-sweep.sh --recursive ~/src` のように
+対象を明示して渡します。
 
 ## 注意
 

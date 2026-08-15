@@ -10,8 +10,9 @@
 | [`issue-pr`](#issue-pr) | Issue 1 件を PR 1 件として実装する | Issue 番号 | `/issue-pr` のみ |
 | [`ship-notes`](#ship-notes) | メモ → Issue → PR を通しで回す | メモのファイルまたはテキスト | `/ship-notes` のみ |
 | [`pr-review`](#pr-review) | PR を独立した立場でレビューする | PR 番号 | `/pr-review` のみ |
+| [`worktree-sweep`](#worktree-sweep) | 残った worktree と不要ブランチを掃除する | スクリプトへ渡すオプション | `/worktree-sweep` のみ |
 
-`cm` 以外の 5 つは `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
+`cm` 以外の 6 つは `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
 起動しません。`cm` だけは `user-invocable: true` で、コミット時にモデルからも選ばれます。
 
 ## スキル間の関係
@@ -25,6 +26,9 @@ Issue ───/issue-pr───> PR                 （ship-issues のワー�
 
 /ship-notes = /triage-notes → /ship-issues を繋ぐだけ
 /pr-review  = PR → レビュー結果            （独立・どこからも呼ばれない）
+
+/ship-issues ──最終ステップ──> /worktree-sweep 相当の掃除
+/worktree-sweep                            （単体でも任意のタイミングで叩ける）
 ```
 
 - 起票だけしたいときは `/triage-notes`。既に Issue があるなら `/ship-issues` に
@@ -33,6 +37,8 @@ Issue ───/issue-pr───> PR                 （ship-issues のワー�
   `isolation: "worktree"` のワーカーを1つ立て、`issue-pr` のワークフローを踏襲させます。
   オーケストレータ本体では実装しません。
 - `pr-review` は他スキルから呼ばれません。PR ができた後に手動で回します。
+- `worktree-sweep` は `ship-issues` が残す worktree とブランチの後始末です。
+  `ship-issues` の最終ステップで同じスクリプトを呼ぶため、通常は手で叩く必要はありません。
 
 Issue の設計と実装は必ず別フェーズに分け、**1 Issue = 1 PR、1 ワーカー = 1 Issue** を守ります。
 いずれのスキルも PR をマージしません。
@@ -45,6 +51,7 @@ Issue の設計と実装は必ず別フェーズに分け、**1 Issue = 1 PR、1
 | スキル | Codex での扱い |
 | --- | --- |
 | `cm` `triage-notes` `issue-pr` `pr-review` | `git` と `gh` にしか依存しないため概ね動く |
+| `worktree-sweep` | `sh` / `git` / `gh` にしか依存しない。`~/.claude/scripts/worktree-sweep.sh` は Import の対象外なので、Codex 側では実体が要る |
 | `ship-issues` `ship-notes` | Claude Code の Agent tool と `isolation: "worktree"` が前提。Codex には対応機能が無いため動かない |
 
 Codex が読む frontmatter は `name` と `description` だけです。
@@ -146,3 +153,17 @@ push もマージもしません。
   弱い指摘を並べるより、確度の高い少数を出す
 - 出力は APPROVE / REQUEST CHANGES / COMMENT の判定から始め、Critical / High / Medium / Low
   の順に列挙。最後に Issue coverage / Scope / Verification assessment を述べる
+
+## worktree-sweep
+
+`ship-issues` のワーカーが残した worktree と、不要になったローカルブランチを掃除します。
+判定ロジックは全て `~/.claude/scripts/worktree-sweep.sh` にあり、スキルはそれを呼んで
+結果を要約するだけです。スキル側で `git` の削除コマンドを直接叩きません。
+
+- 引数はスクリプトへそのまま渡す。無引数ならカレントリポジトリが対象
+- 削除せず残した対象は理由込みで必ず報告する。そこが人間の判断が要る箇所
+- 残ったものを `--force` で押し切らない。`--force` は「直近 60 分に更新された worktree を
+  スキップする」ガードを外すだけで、未コミット変更や未マージの判定には効かない
+
+対象の判定基準とスクリプトのオプションは [../README.md](../README.md#worktree-のゴミを掃除する)
+に書いてあります。

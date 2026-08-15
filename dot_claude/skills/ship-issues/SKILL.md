@@ -224,6 +224,10 @@ Each concurrent worker must have its own isolated worktree.
 
 The worktree should be based on an appropriate base branch according to the repository's workflow.
 
+A worker must create its own dedicated branch for the Issue rather than committing onto
+the branch the worktree was created on. The worktree's own branch stays unused and is
+cleaned up afterwards.
+
 For independent Issues, prefer a fresh base from the remote default branch.
 
 Do not allow a worker to modify:
@@ -323,6 +327,26 @@ Before completing the orchestration, verify:
 - existing implementations were not duplicated
 - dependency relationships are documented
 - worker failures are not hidden
+
+# 14. Sweep worker worktrees and branches
+
+Worker worktrees are not auto-removed once the worker has committed, so every run of
+this skill leaves worktree directories and unused worktree branches behind.
+
+After all waves have finished, run the sweeper against the repository root:
+
+```
+sh ~/.claude/scripts/worktree-sweep.sh
+```
+
+The sweeper only removes what is unambiguously safe. Branches with an open Pull
+Request are never touched: their upstream is alive and they are not merged into the
+base branch, so they do not match any deletion rule.
+
+If the script is not present, skip this step silently and note it in the final report.
+
+Report anything the sweeper kept, together with its reason. Do not delete those
+items manually.
 
 # Completion status
 
