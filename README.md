@@ -64,7 +64,7 @@ chezmoi apply
 .chezmoitemplates/      複数パスへ配るファイルの実体
 AppData/Roaming/        Windows 用の配置先（中身は .chezmoitemplates を参照するだけ）
 dot_config/             Linux/WSL 用の配置先（同上）
-dot_claude/             ~/.claude（Claude Code の設定）
+dot_claude/             ~/.claude（Claude Code の設定 → dot_claude/README.md）
 dot_zsh/                ~/.zsh
 dot_*                   ~/ 直下の dotfiles
 ```
@@ -95,54 +95,19 @@ dot_*                   ~/ 直下の dotfiles
 
 ## Claude Code の設定
 
-`~/.claude` には手書きの設定と、Claude Code が生成するランタイム状態
-（`projects/`、`history.jsonl`、`.credentials.json` など、合計 100MB 超）が同居しています。
-管理対象は次のものだけで、残りは `.chezmoiignore` で明示的に除外しています。
+`~/.claude` はランタイム状態と設定が同居しているため、管理対象を絞った上で
+残りを `.chezmoiignore` で除外しています。管理対象の内訳、日本語化の方針、
+`settings.json` を扱う際の注意は [dot_claude/README.md](dot_claude/README.md) を
+参照してください。スキルの一覧と詳細は
+[dot_claude/skills/README.md](dot_claude/skills/README.md) にあります。
 
-| ソース | 配置先 | 内容 |
-| --- | --- | --- |
-| `dot_claude/settings.json` | `~/.claude/settings.json` | env / model / statusLine / enabledPlugins など |
-| `dot_claude/CLAUDE.md` | `~/.claude/CLAUDE.md` | 全プロジェクト共通の言語ルール |
-| `dot_claude/output-styles/ja-concise.md` | `~/.claude/output-styles/ja-concise.md` | 日本語・簡潔応答スタイル |
-| `dot_claude/skills/*/SKILL.md` | `~/.claude/skills/*/SKILL.md` | スキル定義（下表） |
-
-### スキル
-
-いずれも `disable-model-invocation: true` で、スラッシュコマンドからのみ起動します。
-
-| スキル | 内容 |
-| --- | --- |
-| `cm` | Conventional Commits でコミットする |
-| `triage-notes` | メモを調査して GitHub Issue を起票する（実装しない） |
-| `issue-pr` | Issue 1件を PR 1件として実装する |
-| `ship-notes` | メモ → Issue → 並列ワーカー → PR を通しで回すオーケストレータ |
-| `pr-review` | PR を独立した立場でレビューする（変更しない） |
-
-`~/.claude` のパスは Windows / Linux ともに同じなので、OS ごとの分岐はありません。
-
-### 日本語化の担保
-
-「ユーザ向けの応答は日本語」というルールは 2 層に置いています。
-
-- `output-styles/ja-concise.md` — system prompt に展開される。言語ルールに加えて発話量・トーンを規定する
-- `CLAUDE.md` — 全プロジェクトのコンテキストに入る。言語ルールのみを持つ
-
-`output-styles` は `/output-style` で切り替えると丸ごと外れるため、`CLAUDE.md` を
-バックストップとして併置しています。スキルやエージェントの**定義ファイル自体**は
-英語で書く方針で、これは `CLAUDE.md` にのみ記載しています。
-
-`settings.json` から `extraKnownMarketplaces` は意図的に外しています
-（マシン固有の絶対パスを含むため）。必要になったら `/plugin` から手動で登録してください。
+各ディレクトリの `README.md` は `.chezmoiignore` で除外しているため、ホームには配置されません。
 
 ## 注意
 
 - `AppData/Roaming/` 配下に `exact_` プレフィックスを付けないこと。
   chezmoi が管理していない他アプリの設定まで削除されます。
-- `dot_claude/` 配下にも `exact_` プレフィックスを付けないこと。
-  `~/.claude` の会話ログや認証情報が消えます。
-- `~/.claude/settings.json` は Claude Code 自身が書き換えます。
-  `chezmoi re-add` の前に `chezmoi diff` で、マシン固有の絶対パスや
-  一時的なプラグイン設定が混入していないか確認してください。
+- `dot_claude/` 配下にも `exact_` プレフィックスを付けないこと（[詳細](dot_claude/README.md#注意)）。
 - `.vimrc` / `.gvimrc` / `.zsh/*.zsh` には `{{` `}}` が含まれるため、
   テンプレート（`.tmpl`）にしないこと。
 - 秘密情報は `~/.secret` に置きます（`.zshenv` から読み込み、リポジトリでは管理しません）。

@@ -1,5 +1,8 @@
 # chezmoi のソース管理用ファイル（デプロイ対象ではない）
+# .chezmoiignore のパターンは配置先パスに対する doublestar マッチで、gitignore と違い
+# `/` をまたがない。サブディレクトリの README.md を無視するには ** が要る。
 README.md
+**/README.md
 
 # Windows 以外では AppData 配下を配置しない
 {{ if ne .chezmoi.os "windows" }}
