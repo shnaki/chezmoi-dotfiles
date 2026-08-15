@@ -1,0 +1,13 @@
+# chezmoi のソース管理用ファイル（デプロイ対象ではない）
+README.md
+
+# Windows 以外では AppData 配下を配置しない
+{{ if ne .chezmoi.os "windows" }}
+AppData
+{{ end }}
+
+# Windows では GUI アプリの設定を AppData/Roaming 側に配置するため
+# ~/.config 配下は丸ごと対象外にする
+{{ if eq .chezmoi.os "windows" }}
+.config
+{{ end }}

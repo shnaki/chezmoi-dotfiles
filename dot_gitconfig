@@ -1,0 +1,81 @@
+[core]
+    pager = less -q -R
+    excludesfile = ~/.gitignore
+    autocrlf = input
+    preloadindex = true
+    packedGitLimit = 128m
+    packedGitWindowSize = 128m
+
+[init]
+    defaultBranch = main
+
+[pack]
+    deltaCacheSize = 128m
+    packSizeLimit = 128m
+    windowMemory = 128m
+
+[color]
+    ui = auto
+
+[color "diff"]
+    meta = 242 238
+    frag = 239 236
+    old = 167 normal
+    new = 030 normal
+    context = 240
+    commit = 246 024
+
+[alias]
+    st = status
+    co = checkout
+    cm = commit
+    typechange = status -s | awk '$1=="T"{print $2}' | xargs git checkout
+    graph = log --graph --date-order --all --pretty=format:'%h %Cred%d %Cgreen%ad %Cblue%cn %Creset%s' --date=short
+    br = switch
+    review = diff origin/master...
+
+[help]
+    autocorrect = 1
+
+[push]
+    # Use the Git 1.x.x default to avoid errors on machines with old Git
+    # installations. To use `simple` instead, add this to your `~/.extra` file:
+    # `git config --global push.default simple`. See http://git.io/mMah-w.
+    default = matching
+
+[user]
+    name  = shnaki
+    email = shnakicode@gmail.com
+
+[pager]
+    # log  = diff-highlight | less -RX
+    # show = diff-highlight | less -RX
+    # diff = diff-highlight | less -RX
+
+[diff]
+    tool      = vimdiff
+    algorithm = histogram
+    compactionHeuristic = true
+
+[ghq]
+    root = ~/src
+    # user = shnaki
+
+[merge]
+    tool = vimdiff
+
+[zgit "keybind"]
+    echo   = ctrl-e
+    add    = ctrl-a
+    add-p  = ctrl-w
+    commit = ctrl-c
+    diff   = ctrl-d
+    reset  = ctrl-r
+
+[zgit "default"]
+    toggle-all = ctrl-z
+
+[zgit "core"]
+    action   = status
+    tool     = enhancd
+    lessopen = "| pygmentize -O style=solarized -f console256 -g %s"

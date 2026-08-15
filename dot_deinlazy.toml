@@ -1,0 +1,21 @@
+[[plugins]]
+repo = 'Shougo/denite.nvim'
+on_cmd = 'Denite'
+
+[[plugins]] # Switch filetype by cusor context
+repo = 'osyo-manga/vim-precious'
+depends = ['context_filetype.vim']
+
+[[plugins]] # toml syntax
+repo = 'cespare/vim-toml'
+on_ft = 'toml'
+
+[[plugins]] # Command-line fuzzy finder
+repo = 'junegunn/fzf'
+build = './install --bin'
+merged = '0'
+
+[[plugins]] # fzf vim
+repo = 'junegunn/fzf.vim'
+depends = 'fzf'
+on_cmd = 'FZF'
