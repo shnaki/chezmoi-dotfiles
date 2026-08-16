@@ -12,7 +12,7 @@
 | [`ship-notes`](#ship-notes) | メモ → Issue → PR を通しで回す | `--merge`（任意）+ メモのファイルまたはテキスト | `/ship-notes` のみ |
 | [`pr-review`](#pr-review) | PR を独立した立場でレビューする | PR 番号 | `/pr-review` のみ |
 | [`pr-fix`](#pr-fix) | レビュー指摘を PR ブランチに反映して push する | PR 番号 + 指摘（任意） | `/pr-fix` のみ |
-| [`pr-land`](#pr-land) | 準備の整った PR をマージして後始末する | PR 番号 | `/pr-land` のみ |
+| [`pr-land`](#pr-land) | 準備の整った PR をマージして後始末する | PR 番号 + `--keep-branch`（任意） | `/pr-land` のみ |
 | [`worktree-sweep`](#worktree-sweep) | 残った worktree と不要ブランチを掃除する | スクリプトへ渡すオプション | `/worktree-sweep` のみ |
 
 `cm` 以外の 9 つは `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
@@ -254,7 +254,13 @@ GitHub へのコメント投稿もしません。
 - 止める条件: open でない / draft / `CONFLICTING` / `CHANGES_REQUESTED` /
   `gh pr checks` の失敗 / 議論に未対応の反対意見。**直さずに止めて報告する**
   （直すのは `pr-fix` の仕事）
-- マージ方式はリポジトリの慣例に従い、不明なら `--squash`。`--delete-branch` を付ける
+- マージ方式はリポジトリの慣例に従い、不明なら `--squash`。既定で `--delete-branch` を
+  付けて remote ブランチを消す。残したいときだけ `--keep-branch` を付ける（ローカルの
+  後始末には影響しない）
+- `gh` はローカルブランチ → remote ブランチの順に消すので、ローカルブランチが worktree で
+  checkout 中（`ship-issues --merge` の通常ケース）だとローカル削除で失敗して **remote が
+  残る**。マージ済みなら停止条件にせず、`gh api` で remote ブランチの有無を確かめ、残って
+  いれば `gh api -X DELETE .../git/refs/heads/<branch>` で消してから後始末へ進む
 - マージ後に紐づく Issue が閉じたか確認する。閉じていなければ報告のみ（手で閉じない）
 - 後始末は base branch へ切替 → `git fetch --prune` → `git pull --ff-only` →
   `worktree-sweep.sh`。`git` の削除コマンドは自分で叩かない

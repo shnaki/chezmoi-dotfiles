@@ -1,7 +1,7 @@
 ---
 name: pr-land
 description: "Merge a Pull Request that is ready to land: verify checks and review state, merge it, confirm the linked Issue closed, and clean up the local branch and worktree."
-argument-hint: "[pr-number]"
+argument-hint: "[pr-number] [--keep-branch]"
 disable-model-invocation: true
 ---
 
@@ -25,14 +25,20 @@ All GitHub operations (reading, searching, merging Pull Requests and reading Iss
 - Never force-push.
 - Never delete a local branch or worktree with your own `git` commands; use the sweeper.
 
+# 0. Parse the arguments
+
+`--keep-branch` is an option, not a Pull Request number. Remove it before interpreting
+the rest. With it, leave the remote branch in place after merging (step 5). Without it,
+the remote branch is deleted.
+
 # 1. Resolve the Pull Request number
 
-Normalize `$ARGUMENTS` into a plain number:
+Normalize what remains of `$ARGUMENTS` into a plain number:
 
 - `82`, `#82`, and a full Pull Request URL all mean Pull Request 82
 - strip any leading `#` so the number is never interpolated as `##82`
 
-If `$ARGUMENTS` is empty, resolve the Pull Request for the current branch
+If nothing remains, resolve the Pull Request for the current branch
 (`gh pr view --json number`). If that finds nothing, stop and report.
 
 # 2. Check that it is ready to land
@@ -98,15 +104,53 @@ gh pr merge <N> --squash --delete-branch
 
 Replace `--squash` with the method chosen in step 4.
 
-`--delete-branch` removes the remote branch and, when the local branch is checked out
-somewhere, the local one as well.
+With `--keep-branch`, drop `--delete-branch` and leave the remote branch in place:
+
+```bash
+gh pr merge <N> --squash
+```
+
+`--delete-branch` makes `gh` delete, in this order: the local branch of the same name if
+one exists (switching to the base branch first when it is checked out), then the remote
+branch. For a Pull Request from a fork, `gh` skips the remote deletion.
+
+The order matters. If the local branch is checked out in a worktree (the normal case
+when `ship-issues` lands a Pull Request while the worker's worktree still exists),
+`git branch -D` fails, `gh` exits non-zero with `failed to delete local branch`, and
+**the remote branch is never deleted** even though the merge itself succeeded. Do not
+treat this as a stop condition, and do not retry the merge. Instead:
+
+1. Confirm the merge happened: `gh pr view <N> --json state` reports `MERGED`.
+2. Note the failed local deletion. The sweeper in step 7 handles the local branch; do
+   not delete it yourself.
+3. Continue with the remote-branch check below.
+
+After the merge, unless `--keep-branch` was given, make sure the remote branch is really
+gone rather than trusting the exit code:
+
+```bash
+gh api "repos/{owner}/{repo}/branches/<headRefName>" --silent
+```
+
+If that succeeds (the branch still exists) and the Pull Request is not from a fork,
+delete it through the API:
+
+```bash
+gh api -X DELETE "repos/{owner}/{repo}/git/refs/heads/<headRefName>"
+```
+
+Take `<headRefName>` from step 2. If the delete is rejected (for example by branch
+protection), report it and continue; do not force it.
+
+`--keep-branch` only affects the remote branch. Local cleanup in step 7 is unchanged, and
+the sweeper may still remove the merged local branch.
 
 For a squash merge, make sure the resulting commit message follows the repository's
 commit convention. Do not leave tool traces, co-author trailers, or generated-by
 boilerplate in it.
 
-If the merge command fails, report the error and stop. Do not retry with a different
-method to get past a rejection.
+If the merge itself fails (the Pull Request is not `MERGED` afterwards), report the error
+and stop. Do not retry with a different method to get past a rejection.
 
 # 6. Confirm the outcome
 
@@ -145,6 +189,7 @@ Return:
 
 - Pull Request number, title, and merge commit
 - merge method used
+- whether the remote branch was deleted or kept (`--keep-branch`)
 - the Issue that closed, or a note that it did not
 - check results at merge time
 - local cleanup result, including everything the sweeper kept and why
