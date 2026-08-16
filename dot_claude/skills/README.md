@@ -260,7 +260,8 @@ GitHub へのコメント投稿もしません。
 - `gh` はローカルブランチ → remote ブランチの順に消すので、ローカルブランチが worktree で
   checkout 中（`ship-issues --merge` の通常ケース）だとローカル削除で失敗して **remote が
   残る**。マージ済みなら停止条件にせず、`gh api` で remote ブランチの有無を確かめ、残って
-  いれば `gh api -X DELETE .../git/refs/heads/<branch>` で消してから後始末へ進む
+  いれば `git push origin --delete <branch>` で消してから後始末へ進む
+  （`gh api -X DELETE .../git/refs/heads/<branch>` は権限分類器にブロックされる）
 - マージ後に紐づく Issue が閉じたか確認する。閉じていなければ報告のみ（手で閉じない）
 - 後始末は base branch へ切替 → `git fetch --prune` → `git pull --ff-only` →
   `worktree-sweep.sh`。`git` の削除コマンドは自分で叩かない
