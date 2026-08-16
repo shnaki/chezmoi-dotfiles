@@ -18,7 +18,8 @@
       "Bash(gh issue view:*)",
       "Bash(gh issue status:*)",
       "Bash(gh search issues:*)",
-      "Bash(gh search prs:*)"
+      "Bash(gh search prs:*)",
+      "Bash(git commit:*)"
     ],
     "deny": ["mcp__Claude_Browser"]
   },

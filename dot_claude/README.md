@@ -6,7 +6,7 @@
 
 | ソース | 配置先 | 内容 |
 | --- | --- | --- |
-| `settings.json` | `~/.claude/settings.json` | env / model / permissions（`gh` 読み取り系の allow、Browser pane の deny）/ hooks / attribution / statusLine / enabledPlugins など |
+| `settings.json` | `~/.claude/settings.json` | env / model / permissions（`gh` 読み取り系と `git commit` の allow、Browser pane の deny）/ hooks / attribution / statusLine / enabledPlugins など |
 | `CLAUDE.md` | `~/.claude/CLAUDE.md` | 全プロジェクト共通の言語ルールとコミット / PR ルール |
 | `output-styles/ja-concise.md` | `~/.claude/output-styles/ja-concise.md` | 日本語・簡潔応答スタイル |
 | `skills/*/` | `~/.claude/skills/*/` | スキル定義（`SKILL.md`）と付随ファイル（[skills/README.md](skills/README.md)） |
@@ -100,7 +100,7 @@ Import が上書きするため維持できません。
 届きません。`CLAUDE.md` は Import で `~/.codex/AGENTS.md` に波及するため両方に効きますが、
 強制力はありません。**どちらか片方では塞がらないため、冗長に見えても両方残してください。**
 
-## gh の読み取り系を許可している
+## gh の読み取り系と git commit を許可している
 
 スキルは GitHub 操作を GitHub CLI（`gh`）に統一しています
 （[skills/README.md](skills/README.md#前提ツール)）。都度の権限プロンプトを減らすため、
@@ -110,6 +110,11 @@ Import が上書きするため維持できません。
   `gh issue list|view|status` / `gh search issues|prs`
 - 許可しない: `gh api`（GET も POST も同じ入口で区別できない）、`create` / `edit` /
   `close` / `merge` / `comment` などの書き込み系。これらは都度確認のまま
+
+`git commit` も許可に入れています。ローカルに閉じていて取り消せるうえ、`cm` や
+`pr-ready` など多くのスキルが必ず通る工程のためです。auto mode の分類器が
+`git commit` を弾いて手が止まることがあり、その回避も兼ねています。`git push` と
+ブランチ削除は remote に出るため許可していません。
 
 `enabledPlugins` の `github@claude-plugins-official`（GitHub MCP）は対話用に残していますが、
 スキルからは使いません。MCP 側のツールは `permissions.allow` に入れていないので、
