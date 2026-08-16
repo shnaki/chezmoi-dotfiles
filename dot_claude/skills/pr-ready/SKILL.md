@@ -25,6 +25,7 @@ Follow all repository-specific instructions in:
 - Never push to the default branch.
 - Never force-push.
 - Never merge the Pull Request.
+- All GitHub operations (reading, searching, and creating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. If `gh` is unavailable or not authenticated, stop and report instead of falling back.
 
 # 1. Check the branch
 
@@ -126,7 +127,7 @@ If there is nothing to commit and nothing on the branch beyond the base, stop an
 
 If `$ARGUMENTS` names an Issue:
 
-- read its title, body, and relevant comments
+- read its title, body, and relevant comments (`gh issue view <N> --comments`)
 - confirm that the work on the branch actually addresses it
 - if the branch clearly does something else, report the mismatch and continue without `Closes`
 
@@ -145,9 +146,9 @@ Do not push to the default branch. Do not force-push.
 
 # 9. Create exactly one Pull Request
 
-First check whether a Pull Request already exists for this branch. If one exists, do not create another: report its URL and stop.
+First check whether a Pull Request already exists for this branch (`gh pr list --head <branch>`). If one exists, do not create another: report its URL and stop.
 
-Use whichever tool is available for creating the Pull Request (`gh pr create`, GitHub MCP, or the repository's own tooling). Do not depend on one specific tool.
+Create the Pull Request with `gh pr create`.
 
 Title: concise, describing the completed change. Match the language and style of existing Pull Requests in the repository.
 

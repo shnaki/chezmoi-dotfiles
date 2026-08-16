@@ -26,10 +26,11 @@ Follow all repository-specific instructions in:
 - Never modify the default-branch checkout directly.
 - Never merge the Pull Request.
 - Never force-push unless the repository explicitly requires it and the user has explicitly authorized it.
+- All GitHub operations (reading, searching, and creating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. If `gh` is unavailable or not authenticated, stop and report instead of falling back.
 
 # 1. Read the Issue
 
-Read:
+Read (`gh issue view $ARGUMENTS --comments`):
 
 - the Issue title
 - the full Issue body
@@ -50,7 +51,7 @@ Do not begin editing before understanding the Issue.
 
 Check whether:
 
-- a Pull Request already exists for this Issue
+- a Pull Request already exists for this Issue (`gh pr list --search "$ARGUMENTS" --state all`)
 - another branch appears to implement the same change
 - the Issue has become obsolete
 - the Issue depends on an unmerged change
@@ -191,7 +192,7 @@ Do not force-push.
 
 # 12. Create exactly one Pull Request
 
-Create one Pull Request for Issue #$ARGUMENTS.
+Create one Pull Request for Issue #$ARGUMENTS with `gh pr create`.
 
 Use a concise title describing the completed change.
 

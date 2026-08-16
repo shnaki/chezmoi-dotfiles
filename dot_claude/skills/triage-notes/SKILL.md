@@ -12,6 +12,8 @@ This skill is responsible for investigation and issue design only.
 Do not implement any changes.
 Do not create branches or Pull Requests.
 
+All GitHub operations (reading, searching, and creating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. If `gh` is unavailable or not authenticated, stop and report instead of falling back.
+
 # Goals
 
 Transform informal bug reports, ideas, TODOs, or rough notes into GitHub Issues that are:
@@ -60,9 +62,9 @@ Use the implementation as evidence to clarify what the actual problem or feature
 
 # 3. Check existing work
 
-Search existing open and recently closed GitHub Issues for duplicates or closely related work.
+Search existing open and recently closed GitHub Issues for duplicates or closely related work (`gh issue list --search "<keywords>" --state all`).
 
-Also check open Pull Requests when relevant.
+Also check open Pull Requests when relevant (`gh pr list --search "<keywords>"`).
 
 If the work is already tracked:
 
@@ -179,7 +181,7 @@ Avoid committing the implementation worker to a specific file, class, library, o
 
 # 9. Create the Issues
 
-Create the final Issues using GitHub CLI.
+Create the final Issues with `gh issue create`.
 
 Do not invent labels, milestones, assignees, or projects unless repository conventions clearly require them.
 

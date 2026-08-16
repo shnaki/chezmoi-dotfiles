@@ -13,9 +13,11 @@ Do not modify files.
 Do not push commits.
 Do not merge the Pull Request.
 
+All GitHub operations (reading, searching, and creating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. If `gh` is unavailable or not authenticated, stop and report instead of falling back.
+
 # 1. Read the Pull Request
 
-Read:
+Read (`gh pr view $ARGUMENTS --comments`):
 
 - title
 - description
@@ -39,7 +41,7 @@ The Issue is the primary scope boundary.
 
 # 3. Inspect the complete diff
 
-Review the full Pull Request diff against its base branch.
+Review the full Pull Request diff against its base branch (`gh pr diff $ARGUMENTS`).
 
 Do not review only individual changed snippets in isolation.
 

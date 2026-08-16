@@ -47,6 +47,24 @@ Issue ───/issue-pr───> PR                 （ship-issues のワー�
 Issue の設計と実装は必ず別フェーズに分け、**1 Issue = 1 PR、1 ワーカー = 1 Issue** を守ります。
 いずれのスキルも PR をマージしません。
 
+## 前提ツール
+
+全スキルは `git` と、インストール・認証済みの GitHub CLI（`gh`）を前提にしています。
+Issue / PR の読み取り・検索・作成は **すべて `gh` に統一**し、各 SKILL.md にもその旨を
+明記しています。`gh` が無い、または未認証なら、スキルは別の手段に逃げず止まって報告します。
+
+`settings.json` で有効にしている GitHub プラグイン（`github@claude-plugins-official`、
+GitHub MCP）はスキルからは使いません。対話中に Issue を検索したいといった用途のために
+残してあるだけです。`gh` に寄せる理由:
+
+- Codex 側の前提（`git` + `gh`、後述）と揃う。MCP は Codex に届く保証がない
+- 経路が 1 本なら、環境によってモデルが選ぶツールが変わって挙動がブレることがない
+- `worktree-sweep.sh` が既に `gh pr list` に依存している
+
+読み取り系の `gh` サブコマンドは `settings.json` の `permissions.allow` で許可し、
+書き込み系（`create` / `edit` / `close` / `merge`）は都度確認のままにしています
+（[../README.md](../README.md#gh-の読み取り系を許可している)）。
+
 ## Codex への移植性
 
 これらのスキルは Codex の Import で `~/.agents/skills` にコピーされます
@@ -54,7 +72,7 @@ Issue の設計と実装は必ず別フェーズに分け、**1 Issue = 1 PR、1
 
 | スキル | Codex での扱い |
 | --- | --- |
-| `cm` `triage-notes` `issue-pr` `pr-ready` `pr-review` | `git` と `gh` にしか依存しないため概ね動く |
+| `cm` `triage-notes` `issue-pr` `pr-ready` `pr-review` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)） |
 | `worktree-sweep` | `sh` / `git` / `gh` にしか依存しない。`~/.claude/scripts/worktree-sweep.sh` は Import の対象外なので、Codex 側では実体が要る |
 | `ship-issues` `ship-notes` | Claude Code の Agent tool と `isolation: "worktree"` が前提。Codex には対応機能が無いため動かない |
 
@@ -144,7 +162,7 @@ Issue 番号 1 件を受け取り、PR 1 件として実装します。Issue が
 - リポジトリ規定の検証を影響範囲から先に流す。無ければでっち上げない。既存の失敗は直さず記録
 - 未コミット変更は `cm` の規約でコミットする
 - 同ブランチの PR が既にあれば作らず報告。PR テンプレートがあればそれに従い、無ければ
-  Summary / Why / Verification / Issue の構成。作成ツールは `gh` に固定しない
+  Summary / Why / Verification / Issue の構成。`gh pr create` で作る
 - force-push しない。マージしない
 
 ## ship-notes

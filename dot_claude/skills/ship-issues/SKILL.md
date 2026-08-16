@@ -44,6 +44,7 @@ Issues
 - Do not modify Issue requirements merely to make parallelization easier.
 - Do not merge Pull Requests.
 - Keep detailed implementation work out of the orchestrator context.
+- All GitHub operations (reading, searching, and creating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. If `gh` is unavailable or not authenticated, stop and report instead of falling back.
 
 # 1. Parse the requested Issues
 
@@ -61,7 +62,7 @@ Do not process unrelated Issues that were not requested.
 
 # 2. Read every Issue
 
-Before starting implementation, read every requested Issue.
+Before starting implementation, read every requested Issue (`gh issue view <N> --comments`).
 
 For each Issue, inspect:
 

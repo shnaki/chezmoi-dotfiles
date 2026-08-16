@@ -6,7 +6,7 @@
 
 | ソース | 配置先 | 内容 |
 | --- | --- | --- |
-| `settings.json` | `~/.claude/settings.json` | env / model / permissions / hooks / attribution / statusLine / enabledPlugins など |
+| `settings.json` | `~/.claude/settings.json` | env / model / permissions（`gh` 読み取り系の allow、Browser pane の deny）/ hooks / attribution / statusLine / enabledPlugins など |
 | `CLAUDE.md` | `~/.claude/CLAUDE.md` | 全プロジェクト共通の言語ルールとコミット / PR ルール |
 | `output-styles/ja-concise.md` | `~/.claude/output-styles/ja-concise.md` | 日本語・簡潔応答スタイル |
 | `skills/*/SKILL.md` | `~/.claude/skills/*/SKILL.md` | スキル定義（[skills/README.md](skills/README.md)） |
@@ -56,6 +56,21 @@ Import が上書きするため維持できません。
 一方で `attribution` は Claude Code にしか効かず、Codex や GitHub MCP 経由の PR 作成には
 届きません。`CLAUDE.md` は Import で `~/.codex/AGENTS.md` に波及するため両方に効きますが、
 強制力はありません。**どちらか片方では塞がらないため、冗長に見えても両方残してください。**
+
+## gh の読み取り系を許可している
+
+スキルは GitHub 操作を GitHub CLI（`gh`）に統一しています
+（[skills/README.md](skills/README.md#前提ツール)）。都度の権限プロンプトを減らすため、
+`settings.json` の `permissions.allow` に副作用のない `gh` サブコマンドだけを入れています。
+
+- 許可: `gh auth status` / `gh repo view` / `gh pr list|view|diff|checks|status` /
+  `gh issue list|view|status` / `gh search issues|prs`
+- 許可しない: `gh api`（GET も POST も同じ入口で区別できない）、`create` / `edit` /
+  `close` / `merge` / `comment` などの書き込み系。これらは都度確認のまま
+
+`enabledPlugins` の `github@claude-plugins-official`（GitHub MCP）は対話用に残していますが、
+スキルからは使いません。MCP 側のツールは `permissions.allow` に入れていないので、
+使えば都度確認になります。
 
 ## Browser pane を封じている
 
