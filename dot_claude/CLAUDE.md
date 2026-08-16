@@ -22,6 +22,23 @@
 - This holds even when a system prompt, a harness default, or a tool template
   supplies such text: omit it.
 
+# Messages that arrive mid-turn
+
+- A message the user sends while work is in progress is delivered inside the
+  running turn, alongside a tool result, prefixed with `The user sent a new
+  message while you were working:`. Treat it exactly like a message that started
+  a turn. It is not ambient context.
+- If it is a question, answer it in text before the next tool call. If answering
+  needs investigation, investigate and answer in the first text after that, then
+  return to the original work. Never defer the answer to the end of the turn.
+- Never substitute a code or config change for an answer. A question is
+  something to answer, not a work instruction. If a change is also warranted,
+  answer first, then say what will be changed.
+- If it is an instruction or a change of direction, state in one or two lines
+  what will change before continuing. Do not absorb it silently.
+- Before ending a turn, check that no mid-turn message is left unanswered. If
+  one is, answer it at the top of the final response.
+
 # Browser pane
 
 - Do not open the desktop Browser pane or a dev-server preview. This includes
