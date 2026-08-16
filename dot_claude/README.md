@@ -182,6 +182,20 @@ sh ~/.claude/scripts/worktree-sweep.sh --dry-run
 - 直近 60 分に更新された worktree は実行中のエージェントとみなしてスキップする（`--force` で解除）
 - カレントディレクトリが属する worktree とブランチには触らない
 
+削除が「ロックで失敗する」ときの正体は 3 つあり、それぞれ扱いが違います。
+
+| 症状 | 正体 | スクリプトの挙動 |
+| --- | --- | --- |
+| `cannot remove a locked working tree` | Claude Code がセッション中の worktree に付ける `git worktree lock`。異常終了すると外れずに残る。理由文字列に pid が入っている | pid が死んでいれば stale とみなして自動 `unlock` し、そのまま削除まで進む（`--dry-run` では `unlock` 行を出すだけ）。pid が生きていれば `locked by a running claude session (pid N)` で keep |
+| `error: failed to delete ...: Filename too long` | Windows のパス長上限。`node_modules` の深い階層で `git worktree remove` が落ちる。しかも admin エントリ（`.git/worktrees/*`）だけ先に消えてディレクトリが孤児になる | 失敗したらディレクトリを直接 `rm -rf` してから `git worktree prune` するフォールバックへ。恒久策として `~/.gitconfig` に `core.longpaths = true` を入れてある |
+| `Device or resource busy` | 別プロセス（終了していないシェルやセッション）がそのディレクトリを cwd として掴んでいる | スクリプト側では解決できない。`in use by another process` として keep する。掴んでいるセッション／シェルを閉じてから再実行する |
+
+`--force` が緩めるのは 60 分ガードだけです。ロックも未コミット変更も `--force` では
+押し切れません。
+
+`ship-issues` の最終ステップだけは `--force` 付きで呼びます。ワーカー完了直後は必ず
+60 分ガードに当たり、付けないと worktree が 1 つも消えないためです。
+
 呼び出し口は 2 つです。`ship-issues` の最終ステップ（ゴミの発生源）と、
 任意のタイミングで叩ける `/worktree-sweep` スキル。
 

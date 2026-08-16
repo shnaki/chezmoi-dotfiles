@@ -9,6 +9,15 @@
 # Only unambiguously safe targets are deleted. Anything holding work that is not on a
 # remote is kept and reported with a reason.
 #
+# Three things make removal fail on Windows, and each is handled here:
+#   1. A `git worktree lock` left behind by a claude session that never exited cleanly.
+#      The lock reason carries the pid, so a lock whose pid is gone is unlocked and the
+#      worktree swept; a lock whose pid is alive is kept.
+#   2. `git worktree remove` failing with "Filename too long" on deep node_modules
+#      paths. Removal falls back to deleting the directory, then `worktree prune`.
+#   3. "Device or resource busy": another process has the directory as its working
+#      directory. Nothing here can fix that, so it is reported as such.
+#
 # Usage: worktree-sweep.sh [--dry-run] [--recursive] [--no-fetch] [--force] [PATH...]
 
 set -eu
@@ -77,6 +86,16 @@ TMPDIR_SWEEP=$(mktemp -d)
 trap 'rm -rf "$TMPDIR_SWEEP"' EXIT INT TERM
 REPOS="$TMPDIR_SWEEP/repos"
 BRANCHES="$TMPDIR_SWEEP/branches"
+LOCKS="$TMPDIR_SWEEP/locks"
+: > "$LOCKS"
+
+# `ps -W` is a Git Bash extension that lists Windows processes; column 4 is the Windows
+# pid, which is the number a Node process reports as `process.pid`. Elsewhere the usual
+# `kill -0` works.
+PS_W=0
+if ps -W >/dev/null 2>&1; then
+    PS_W=1
+fi
 
 TOTAL_WT=0
 TOTAL_BR=0
@@ -87,6 +106,38 @@ TOTAL_KEPT=0
 keep() {
     TOTAL_KEPT=$((TOTAL_KEPT + 1))
     log "    keep    $1 ($2)"
+}
+
+pid_alive() {
+    if [ "$PS_W" -eq 1 ]; then
+        ps -W 2>/dev/null | awk -v p="$1" 'NR > 1 && $4 == p { found = 1 } END { exit !found }'
+    else
+        kill -0 "$1" 2>/dev/null
+    fi
+}
+
+is_locked() {
+    awk -F'\t' -v n="$1" '$1 == n { found = 1 } END { exit !found }' "$LOCKS"
+}
+
+lock_reason() {
+    awk -F'\t' -v n="$1" '$1 == n { print substr($0, length(n) + 2); exit }' "$LOCKS"
+}
+
+# Turn the collected stderr of a failed removal into a reason the user can act on.
+removal_failure() {
+    case "$1" in
+        *"Device or resource busy"*|*"Text file busy"*|*"Permission denied"*|*"being used by another process"*)
+            printf '%s' "in use by another process; close the shell or session sitting in it and re-run"
+            ;;
+        *"Filename too long"*|*"File name too long"*)
+            printf '%s' "paths too long to delete; set core.longpaths=true and re-run"
+            ;;
+        *)
+            _last=$(printf '%s\n' "$1" | grep -v '^[[:space:]]*$' | tail -n 1)
+            printf 'could not be removed: %s' "${_last:-unknown error}"
+            ;;
+    esac
 }
 
 # Ref to compare branches against: origin/<default> when available, since a local
@@ -119,10 +170,19 @@ sweep_worktrees() {
     _wtdir="$_root/.claude/worktrees"
     [ -d "$_wtdir" ] || return 0
 
+    # One porcelain read feeds both lookups below.
+    _meta=$(git -C "$_root" worktree list --porcelain 2>/dev/null || true)
+
     # Basenames of registered worktrees. The directory is flat, so comparing basenames
     # is unambiguous and sidesteps the C:/ vs /c/ path mismatch on Windows.
-    _registered=$(git -C "$_root" worktree list --porcelain 2>/dev/null |
-        sed -n 's|^worktree .*/||p')
+    _registered=$(printf '%s\n' "$_meta" | sed -n 's|^worktree .*/||p')
+
+    # "<basename><TAB><lock reason>" for every locked worktree. Claude Code locks the
+    # worktree a session is working in, and the lock outlives a session that crashed.
+    printf '%s\n' "$_meta" | awk '
+        /^worktree /   { _n = $0; sub(/^worktree .*\//, "", _n); next }
+        /^locked($| )/ { _r = substr($0, 7); sub(/^ /, "", _r); print _n "\t" _r }
+    ' > "$LOCKS"
 
     for _wt in "$_wtdir"/*; do
         [ -d "$_wt" ] || continue
@@ -135,13 +195,44 @@ sweep_worktrees() {
                 ;;
         esac
 
-        if [ "$FORCE" -eq 0 ] &&
+        _is_registered=0
+        if printf '%s\n' "$_registered" | grep -qx -- "$_name"; then
+            _is_registered=1
+        fi
+
+        # A lock blocks `git worktree remove` outright, so resolve it first.
+        _stale_lock=0
+        if [ "$_is_registered" -eq 1 ] && is_locked "$_name"; then
+            _reason=$(lock_reason "$_name")
+            _pid=$(printf '%s' "$_reason" | sed -n 's/.*(pid \([0-9][0-9]*\)).*/\1/p')
+            if [ -z "$_pid" ]; then
+                keep "$_name" "locked: ${_reason:-no reason given}"
+                continue
+            fi
+            if pid_alive "$_pid"; then
+                keep "$_name" "locked by a running claude session (pid $_pid)"
+                continue
+            fi
+            if [ "$DRY_RUN" -eq 1 ]; then
+                log "    unlock  $_name (stale lock, pid $_pid is gone)"
+            elif git -C "$_root" worktree unlock "$_wt" >/dev/null 2>&1; then
+                log "    unlock  $_name (stale lock, pid $_pid is gone)"
+            else
+                keep "$_name" "stale lock (pid $_pid is gone) but git worktree unlock failed"
+                continue
+            fi
+            _stale_lock=1
+        fi
+
+        # A stale lock proves the session that owned the worktree is gone, so the
+        # "may still be running" guard does not apply to it.
+        if [ "$_stale_lock" -eq 0 ] && [ "$FORCE" -eq 0 ] &&
            [ -n "$(find "$_wtdir" -maxdepth 1 -name "$_name" -mmin "-$RECENT_MINUTES" 2>/dev/null)" ]; then
             keep "$_name" "modified within $RECENT_MINUTES minutes, an agent may still be running"
             continue
         fi
 
-        if printf '%s\n' "$_registered" | grep -qx -- "$_name"; then
+        if [ "$_is_registered" -eq 1 ]; then
             if [ -n "$(git -C "$_wt" status --porcelain 2>/dev/null)" ]; then
                 keep "$_name" "has uncommitted changes"
                 continue
@@ -152,22 +243,33 @@ sweep_worktrees() {
             fi
             if [ "$DRY_RUN" -eq 1 ]; then
                 log "    remove  $_name (clean, work is on a remote)"
-            elif git -C "$_root" worktree remove "$_wt" >/dev/null 2>&1; then
+            elif _err=$(git -C "$_root" worktree remove "$_wt" 2>&1); then
                 log "    removed $_name (clean, work is on a remote)"
             else
-                keep "$_name" "git worktree remove failed"
-                continue
+                # `git worktree remove` gives up when a path inside the worktree is too
+                # long for Windows (node_modules), often after it has already dropped
+                # its own admin entry. Deleting the directory finishes the job.
+                _err="$_err
+$(rm -rf "$_wt" 2>&1 || true)"
+                if [ -d "$_wt" ]; then
+                    keep "$_name" "$(removal_failure "$_err")"
+                    continue
+                fi
+                git -C "$_root" worktree prune >/dev/null 2>&1 || true
+                log "    removed $_name (clean, work is on a remote; deleted the directory directly)"
             fi
         else
             # Orphaned: git no longer tracks it, so neither `worktree remove` nor
             # `worktree prune` can help. It is a plain directory now.
             if [ "$DRY_RUN" -eq 1 ]; then
                 log "    remove  $_name (orphaned directory)"
-            elif rm -rf "$_wt" 2>/dev/null; then
-                log "    removed $_name (orphaned directory)"
             else
-                keep "$_name" "orphaned but could not be deleted, files may be locked"
-                continue
+                _err=$(rm -rf "$_wt" 2>&1 || true)
+                if [ -d "$_wt" ]; then
+                    keep "$_name" "orphaned, $(removal_failure "$_err")"
+                    continue
+                fi
+                log "    removed $_name (orphaned directory)"
             fi
         fi
         TOTAL_WT=$((TOTAL_WT + 1))

@@ -437,8 +437,14 @@ this skill leaves worktree directories and unused worktree branches behind.
 After all waves have finished, run the sweeper against the repository root:
 
 ```
-sh ~/.claude/scripts/worktree-sweep.sh
+sh ~/.claude/scripts/worktree-sweep.sh --force
 ```
+
+`--force` is required here. By default the sweeper skips worktrees touched in the last
+60 minutes because an agent may still be running in them, and every worktree this skill
+created was touched moments ago, so a plain run removes nothing. All workers have
+finished by this point. `--force` relaxes only that timing guard — uncommitted changes,
+work that is not on a remote, and live session locks are still kept.
 
 The sweeper only removes what is unambiguously safe. Branches with an open Pull
 Request are never touched: their upstream is alive and they are not merged into the
@@ -447,7 +453,13 @@ base branch, so they do not match any deletion rule.
 If the script is not present, skip this step silently and note it in the final report.
 
 Report anything the sweeper kept, together with its reason. Do not delete those
-items manually.
+items manually. In particular:
+
+- `locked by a running claude session (pid N)` — another session still holds it.
+- `in use by another process` — a shell or session has that directory open.
+
+Both need the owning session or shell closed before a re-run. Do not work around them
+with `rm -rf`, `git worktree remove --force`, or `git worktree unlock`.
 
 Then mark the state file `DONE`.
 

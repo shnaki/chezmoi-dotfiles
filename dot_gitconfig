@@ -2,6 +2,9 @@
     pager = less -q -R
     excludesfile = ~/.gitignore
     autocrlf = input
+    # Windows only. Without it `git worktree remove` fails with "Filename too long"
+    # on deep node_modules paths. Ignored on other platforms.
+    longpaths = true
     preloadindex = true
     packedGitLimit = 128m
     packedGitWindowSize = 128m
