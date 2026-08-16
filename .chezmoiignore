@@ -33,6 +33,7 @@ AppData
 .claude/session-env
 .claude/daemon
 .claude/scheduled-tasks
+.claude/ship-issues
 .claude/statsig
 .claude/todos
 .claude/ide

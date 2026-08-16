@@ -9,10 +9,13 @@
 | `settings.json` | `~/.claude/settings.json` | env / model / permissions（`gh` 読み取り系の allow、Browser pane の deny）/ hooks / attribution / statusLine / enabledPlugins など |
 | `CLAUDE.md` | `~/.claude/CLAUDE.md` | 全プロジェクト共通の言語ルールとコミット / PR ルール |
 | `output-styles/ja-concise.md` | `~/.claude/output-styles/ja-concise.md` | 日本語・簡潔応答スタイル |
-| `skills/*/SKILL.md` | `~/.claude/skills/*/SKILL.md` | スキル定義（[skills/README.md](skills/README.md)） |
+| `skills/*/` | `~/.claude/skills/*/` | スキル定義（`SKILL.md`）と付随ファイル（[skills/README.md](skills/README.md)） |
 | `scripts/*.sh` | `~/.claude/scripts/*.sh` | スキルから呼ぶシェルスクリプト（後述） |
 
 `~/.claude` のパスは Windows / Linux ともに同じなので、OS ごとの分岐はありません。
+
+`~/.claude/ship-issues/` はスキルが書き出す実行状態（中断・再開用）で、管理対象では
+ありません（[skills/README.md](skills/README.md#ship-issues)）。
 
 ## Codex の Import 元でもある
 

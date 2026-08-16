@@ -6,14 +6,16 @@
 | --- | --- | --- | --- |
 | [`cm`](#cm) | Conventional Commits でコミットする | コミットメッセージまたは変更の説明 | `/cm`（モデルからの自動起動も可） |
 | [`triage-notes`](#triage-notes) | メモを調査して GitHub Issue を起票する | メモのファイルまたはテキスト | `/triage-notes` のみ |
-| [`ship-issues`](#ship-issues) | 既存 Issue 群を並列ワーカーに割って PR 化する | Issue 番号の並び | `/ship-issues` のみ |
-| [`issue-pr`](#issue-pr) | Issue 1 件を PR 1 件として実装する | Issue 番号 | `/issue-pr` のみ |
+| [`ship-issues`](#ship-issues) | 既存 Issue 群を並列ワーカーに割って PR 化する | Issue 番号の並び + `--merge` / `--resume`（任意） | `/ship-issues` のみ |
+| [`issue-pr`](#issue-pr) | Issue 1 件を PR 1 件として実装する | Issue 番号 + `--merge`（任意） | `/issue-pr` のみ |
 | [`pr-ready`](#pr-ready) | 現在ブランチの作業を diff 確認 → 検証 → コミット → PR にする | Issue 番号（任意） | `/pr-ready` のみ |
-| [`ship-notes`](#ship-notes) | メモ → Issue → PR を通しで回す | メモのファイルまたはテキスト | `/ship-notes` のみ |
+| [`ship-notes`](#ship-notes) | メモ → Issue → PR を通しで回す | `--merge`（任意）+ メモのファイルまたはテキスト | `/ship-notes` のみ |
 | [`pr-review`](#pr-review) | PR を独立した立場でレビューする | PR 番号 | `/pr-review` のみ |
+| [`pr-fix`](#pr-fix) | レビュー指摘を PR ブランチに反映して push する | PR 番号 + 指摘（任意） | `/pr-fix` のみ |
+| [`pr-land`](#pr-land) | 準備の整った PR をマージして後始末する | PR 番号 | `/pr-land` のみ |
 | [`worktree-sweep`](#worktree-sweep) | 残った worktree と不要ブランチを掃除する | スクリプトへ渡すオプション | `/worktree-sweep` のみ |
 
-`cm` 以外の 7 つは `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
+`cm` 以外の 9 つは `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
 起動しません。`cm` だけは `user-invocable: true` で、コミット時にモデルからも選ばれます。
 
 ## スキル間の関係
@@ -26,10 +28,13 @@ Issue 群 ─/ship-issues─> 依存分析 → ウェーブ → ワーカー →
 Issue ───/issue-pr───> PR                 （ship-issues のワーカーが踏襲する単位）
 ブランチ上の作業 ─/pr-ready─> PR          （Issue なしでも可。cm のコミット規約を内包）
 
+PR ─/pr-review─> 指摘 ─/pr-fix─> 修正を push ─/pr-land─> マージ + 掃除
+
 /ship-notes = /triage-notes → /ship-issues を繋ぐだけ
-/pr-review  = PR → レビュー結果            （独立・どこからも呼ばれない）
+/ship-issues --merge / /issue-pr --merge ──> PR 作成後に /pr-land を続けて回す
 
 /ship-issues ──最終ステップ──> /worktree-sweep 相当の掃除
+/pr-land     ──最終ステップ──> 同上
 /worktree-sweep                            （単体でも任意のタイミングで叩ける）
 ```
 
@@ -40,12 +45,28 @@ Issue ───/issue-pr───> PR                 （ship-issues のワー�
   オーケストレータ本体では実装しません。
 - Issue から始めるなら `/issue-pr`、手元で書き終えた作業を PR にするなら `/pr-ready`。
   `pr-ready` は実装をせず、既にブランチにある変更を確認・検証・コミットして PR にするだけです。
-- `pr-review` は他スキルから呼ばれません。PR ができた後に手動で回します。
+- `pr-review` → `pr-fix` → `pr-land` が PR 作成後の一直線です。`pr-review` は読むだけ、
+  `pr-fix` は直して push するだけ、マージするのは `pr-land` だけ、と工程を分けています。
 - `worktree-sweep` は `ship-issues` が残す worktree とブランチの後始末です。
-  `ship-issues` の最終ステップで同じスクリプトを呼ぶため、通常は手で叩く必要はありません。
+  `ship-issues` と `pr-land` が最終ステップで同じスクリプトを呼ぶため、通常は手で叩く
+  必要はありません。
 
 Issue の設計と実装は必ず別フェーズに分け、**1 Issue = 1 PR、1 ワーカー = 1 Issue** を守ります。
-いずれのスキルも PR をマージしません。
+
+**PR をマージするのは `pr-land` だけです。** `ship-issues` と `issue-pr` は `--merge` を
+付けたときに `pr-land` のワークフローを続けて回すだけで、自前ではマージしません。
+ワーカーは `--merge` の有無にかかわらずマージしません。
+
+## スキル同士の呼び出し方
+
+`cm` 以外は `disable-model-invocation: true` なので、**別のスキルやサブエージェントから
+Skill tool で呼ぶことはできません**（モデルが選択できない設定のため）。スキルが他のスキルの
+手順に従う箇所では、`~/.claude/skills/<name>/SKILL.md` をパスで読ませています。
+
+- `ship-issues` のワーカー → `issue-pr/SKILL.md`
+- `ship-issues --merge` / `issue-pr --merge` → `pr-land/SKILL.md`
+
+このため Codex 側（Import 先は `~/.agents/skills`）では、これらのパス参照が解決しません。
 
 ## 前提ツール
 
@@ -72,7 +93,7 @@ GitHub MCP）はスキルからは使いません。対話中に Issue を検索
 
 | スキル | Codex での扱い |
 | --- | --- |
-| `cm` `triage-notes` `issue-pr` `pr-ready` `pr-review` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)） |
+| `cm` `triage-notes` `issue-pr` `pr-ready` `pr-review` `pr-fix` `pr-land` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` の `pr-land` 参照は `~/.claude` のパスなので解決しない |
 | `worktree-sweep` | `sh` / `git` / `gh` にしか依存しない。`~/.claude/scripts/worktree-sweep.sh` は Import の対象外なので、Codex 側では実体が要る |
 | `ship-issues` `ship-notes` | Claude Code の Agent tool と `isolation: "worktree"` が前提。Codex には対応機能が無いため動かない |
 
@@ -127,9 +148,21 @@ Codex が読む frontmatter は `name` と `description` だけです。
 - 実行ウェーブを組む。並列度の最大化より安全な並列度を優先し、理由なく直列化もしない
 - ウェーブ内は Agent tool で 1 呼び出し = 1 Issue、`isolation: "worktree"` 指定、
   1 メッセージでまとめて並列起動する
+- ワーカーへ渡すプロンプトは [`ship-issues/worker-prompt.md`](ship-issues/worker-prompt.md)
+  の雛形を埋めて作る。毎回即興で書かない
 - ウェーブ完了ごとに残りを再評価する。初期計画に盲従しない
 - 未マージ PR への依存は明示的に扱う。暗黙の stacked branch を作らない
-- 最終出力は Pull Requests / Not implemented / Execution plan / Dependencies and conflicts
+- 最終出力は Pull Requests / Not implemented / Execution plan / Dependencies and conflicts /
+  State file
+
+`--merge` を付けると、ウェーブ完了ごとにそのウェーブの PR を `pr-land` の手順で
+1 件ずつマージしてから次のウェーブへ進みます。`pr-land` が止めた PR は
+`PR created, not merged (理由)` として記録し、残りは続行します。ワーカーはマージしません。
+
+実行計画と Issue ごとの状態は `~/.claude/ship-issues/<repo>-<日時>.md` に書き出します。
+Claude Desktop のクラッシュや中断を跨いで `/ship-issues --resume` で再開するためのもので、
+再開時はファイルを鵜呑みにせず `gh` と `git worktree list` で実状を取り直します。
+このディレクトリはランタイム状態なので chezmoi では管理しません。
 
 ## issue-pr
 
@@ -137,14 +170,18 @@ Issue 番号 1 件を受け取り、PR 1 件として実装します。Issue が
 
 - 無関係な refactoring・cleanup・formatting・rename・依存更新を PR に混ぜない。
   別の問題を見つけたら報告のみに留める
-- 専用ブランチと隔離 worktree で作業する。default branch の checkout は編集しない
+- 専用ブランチと隔離 worktree で作業する。default branch の checkout にいるなら
+  EnterWorktree で `<N>-<slug>` の worktree を作り、その中で `<N>-<slug>` ブランチを切る。
+  worktree 生成時のブランチにはコミットしない。ExitWorktree は呼ばない（掃除は後工程）
 - 着手前に既存 PR / 同等ブランチの有無を確認し、二重実装を避ける
 - 検証は影響範囲から先に流し、その後リポジトリ規定の広い検証を回す。
   既存の失敗を直すために無関係なコードを触らない
 - コミット前に base branch との差分全体を見て、スコープ外の変更・デバッグコード・
   生成物の巻き込みを取り除く
 - PR 本文は Summary / Why / Verification / Issue（`Closes #<number>`）の構成
-- force-push しない。マージしない
+- 引数の `#31` / Issue URL は番号に正規化する（`##31` になるのを防ぐ）
+- force-push しない。マージしない。`--merge` を付けたときだけ、PR 作成後に `pr-land` の
+  手順でマージする
 
 ## pr-ready
 
@@ -194,6 +231,34 @@ push もマージもしません。
   弱い指摘を並べるより、確度の高い少数を出す
 - 出力は APPROVE / REQUEST CHANGES / COMMENT の判定から始め、Critical / High / Medium / Low
   の順に列挙。最後に Issue coverage / Scope / Verification assessment を述べる
+
+## pr-fix
+
+`pr-review` の指摘を PR ブランチに反映して push します。**マージしません**。
+GitHub へのコメント投稿もしません。
+
+- 指摘の入力元は、引数の自由記述 → 同じ会話の `pr-review` 出力 → GitHub 上のレビュー
+  （`gh pr view --comments`、インラインは `gh api` の GET）の順
+- PR の head ブランチにいなければ隔離 worktree（`pr-<N>`）で `gh pr checkout` する。
+  default branch の checkout では直さない
+- 指摘は 1 件ずつ fix / decline に振り分ける。丸呑みも黙殺もしない。事実誤認、意図的な挙動、
+  PR のスコープ外、リポジトリが求めないスタイル上の好みは理由付きで decline する
+- 検証はリポジトリ規定に従う。既存の失敗は直さず記録する
+- コミットは `cm` の規約。force-push しない
+
+## pr-land
+
+準備の整った PR をマージし、後始末します。**スキルを叩いたこと自体がマージの承認**で、
+マージ前に再確認は取りません。ただし赤信号では必ず止まり、押し切りません。
+
+- 止める条件: open でない / draft / `CONFLICTING` / `CHANGES_REQUESTED` /
+  `gh pr checks` の失敗 / 議論に未対応の反対意見。**直さずに止めて報告する**
+  （直すのは `pr-fix` の仕事）
+- マージ方式はリポジトリの慣例に従い、不明なら `--squash`。`--delete-branch` を付ける
+- マージ後に紐づく Issue が閉じたか確認する。閉じていなければ報告のみ（手で閉じない）
+- 後始末は base branch へ切替 → `git fetch --prune` → `git pull --ff-only` →
+  `worktree-sweep.sh`。`git` の削除コマンドは自分で叩かない
+- コードは変更しない。push もしない
 
 ## worktree-sweep
 

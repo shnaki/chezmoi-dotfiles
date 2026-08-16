@@ -1,13 +1,23 @@
 ---
 name: issue-pr
 description: "Implement exactly one GitHub Issue as exactly one focused Pull Request."
-argument-hint: "[issue-number]"
+argument-hint: "[issue-number] [--merge]"
 disable-model-invocation: true
 ---
 
-Implement GitHub Issue #$ARGUMENTS as exactly one Pull Request.
+Implement the GitHub Issue named in `$ARGUMENTS` as exactly one Pull Request.
 
 The Issue defines the scope boundary.
+
+# 0. Parse the arguments
+
+Normalize the Issue number: `31`, `#31`, and a full Issue URL all mean Issue 31. Strip
+any leading `#` so the number is never interpolated as `##31`. Use the normalized number
+everywhere below, including in `Closes #<N>`.
+
+`--merge` is an option, not an Issue number. Remove it before interpreting the rest.
+With it, land the Pull Request after creating it (step 13). Without it, stop at Pull
+Request creation.
 
 Follow all repository-specific instructions in:
 
@@ -24,13 +34,13 @@ Follow all repository-specific instructions in:
 - Prefer the smallest complete solution.
 - Never weaken tests or validation merely to make the change pass.
 - Never modify the default-branch checkout directly.
-- Never merge the Pull Request.
+- Never merge the Pull Request, unless `--merge` was requested (step 13).
 - Never force-push unless the repository explicitly requires it and the user has explicitly authorized it.
 - All GitHub operations (reading, searching, and creating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. If `gh` is unavailable or not authenticated, stop and report instead of falling back.
 
 # 1. Read the Issue
 
-Read (`gh issue view $ARGUMENTS --comments`):
+Read (`gh issue view <N> --comments`):
 
 - the Issue title
 - the full Issue body
@@ -51,7 +61,7 @@ Do not begin editing before understanding the Issue.
 
 Check whether:
 
-- a Pull Request already exists for this Issue (`gh pr list --search "$ARGUMENTS" --state all`)
+- a Pull Request already exists for this Issue (`gh pr list --search "<N>" --state all`)
 - another branch appears to implement the same change
 - the Issue has become obsolete
 - the Issue depends on an unmerged change
@@ -100,11 +110,33 @@ Do not fix them unless they are necessary to complete the current Issue.
 
 Perform implementation in a dedicated branch and isolated worktree.
 
-If the current session is already operating in the dedicated Issue worktree, continue there.
+Determine where the session currently is:
+
+- **Already in a dedicated worktree for this Issue** — a worker started by `ship-issues`,
+  or a session resuming earlier work. Continue there.
+- **In the repository's default-branch checkout** — create the isolated worktree with the
+  EnterWorktree tool, using the name `<N>-<slug>` (`<slug>` is a short kebab-case
+  description of the change).
+
+Then, inside the worktree:
+
+```bash
+git fetch origin
+```
+
+Confirm the worktree's HEAD contains the current tip of the base branch
+(`git merge-base --is-ancestor origin/<base> HEAD`). If it does not and the tree is
+clean, `git reset --hard origin/<base>`.
+
+Create the working branch `<N>-<slug>` and commit there. Never commit onto the branch
+the worktree was created on: that branch is disposable and is cleaned up by the sweeper.
 
 Do not edit files in the repository's default-branch checkout.
 
 Keep this Issue isolated from other concurrent Issue implementations.
+
+Do not call ExitWorktree when the work is done. Cleanup belongs to `pr-land` and
+`worktree-sweep`, after the Pull Request has landed.
 
 # 6. Implement
 
@@ -192,7 +224,7 @@ Do not force-push.
 
 # 12. Create exactly one Pull Request
 
-Create one Pull Request for Issue #$ARGUMENTS with `gh pr create`.
+Create one Pull Request for Issue #<N> with `gh pr create`.
 
 Use a concise title describing the completed change.
 
@@ -214,17 +246,25 @@ What was run or otherwise verified.
 
 Include:
 
-Closes #$ARGUMENTS
+Closes #<N>
 
 Mention relevant known limitations or pre-existing failures when necessary.
 
-Do not merge the Pull Request.
+# 13. Land the Pull Request
+
+Only with `--merge`. Without it, stop here and do not merge.
+
+Follow the workflow in `~/.claude/skills/pr-land/SKILL.md`. Read it by path; `pr-land`
+is `disable-model-invocation: true` and cannot be selected as a skill from here.
+
+If `pr-land` stops (draft, conflict, failing checks, `CHANGES_REQUESTED`), report the
+stop condition. Do not override it.
 
 # Completion conditions
 
 The task is complete only when:
 
-- Issue #$ARGUMENTS has been addressed
+- Issue #<N> has been addressed
 - the implementation is limited to the Issue scope
 - relevant verification has completed
 - failures caused by the change have been fixed
@@ -233,6 +273,7 @@ The task is complete only when:
 - exactly one Pull Request exists for the Issue
 - the Pull Request references the Issue
 - there are no unintended uncommitted changes
+- with `--merge`: the Pull Request is merged, or the reason it is not is reported
 
 # Final response
 
@@ -243,3 +284,4 @@ Return:
 - verification performed
 - any relevant pre-existing verification failures
 - any follow-up work discovered but intentionally excluded
+- with `--merge`: the merge result, and the cleanup `pr-land` performed
