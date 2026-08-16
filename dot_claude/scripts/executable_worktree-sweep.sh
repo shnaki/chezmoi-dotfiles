@@ -13,8 +13,10 @@
 #   1. A `git worktree lock` left behind by a claude session that never exited cleanly.
 #      The lock reason carries the pid, so a lock whose pid is gone is unlocked and the
 #      worktree swept; a lock whose pid is alive is kept.
-#   2. `git worktree remove` failing with "Filename too long" on deep node_modules
-#      paths. Removal falls back to deleting the directory, then `worktree prune`.
+#   2. `git worktree remove` failing partway ("Filename too long" on deep node_modules
+#      paths, or a transient sharing violation) after it has already dropped its admin
+#      entry. Removal falls back to deleting the directory, with one retry after a
+#      short pause, then `worktree prune`.
 #   3. "Device or resource busy": another process has the directory as its working
 #      directory. Nothing here can fix that, so it is reported as such.
 #
@@ -28,6 +30,8 @@ FETCH=1
 FORCE=0
 # Skip worktrees touched within this many minutes; a background agent may still be running.
 RECENT_MINUTES=60
+# Pause before the one retry of a failed directory delete (transient Windows file locks).
+RETRY_SECONDS=3
 
 usage() {
     cat <<'EOF'
@@ -122,6 +126,24 @@ is_locked() {
 
 lock_reason() {
     awk -F'\t' -v n="$1" '$1 == n { print substr($0, length(n) + 2); exit }' "$LOCKS"
+}
+
+first_line() {
+    printf '%s\n' "$1" | grep -v '^[[:space:]]*$' | head -n 1
+}
+
+# Delete a directory, retrying once after a pause. On Windows a sharing violation from
+# an antivirus scan, the search indexer, or a file watcher is usually gone in seconds;
+# a directory a process holds as its cwd is not, and the second attempt fails the same
+# way. Prints the collected stderr; succeeds when the directory is gone.
+remove_dir() {
+    _out=$(rm -rf "$1" 2>&1 || true)
+    [ -d "$1" ] || { printf '%s' "$_out"; return 0; }
+    sleep "$RETRY_SECONDS"
+    _out="$_out
+$(rm -rf "$1" 2>&1 || true)"
+    printf '%s' "$_out"
+    [ ! -d "$1" ]
 }
 
 # Turn the collected stderr of a failed removal into a reason the user can act on.
@@ -248,9 +270,11 @@ sweep_worktrees() {
             else
                 # `git worktree remove` gives up when a path inside the worktree is too
                 # long for Windows (node_modules), often after it has already dropped
-                # its own admin entry. Deleting the directory finishes the job.
+                # its own admin entry. Deleting the directory finishes the job. Report
+                # why git gave up: the fallback hides an error worth knowing about.
+                log "    note    $_name (git worktree remove failed: $(first_line "$_err"))"
                 _err="$_err
-$(rm -rf "$_wt" 2>&1 || true)"
+$(remove_dir "$_wt")"
                 if [ -d "$_wt" ]; then
                     keep "$_name" "$(removal_failure "$_err")"
                     continue
@@ -264,7 +288,7 @@ $(rm -rf "$_wt" 2>&1 || true)"
             if [ "$DRY_RUN" -eq 1 ]; then
                 log "    remove  $_name (orphaned directory)"
             else
-                _err=$(rm -rf "$_wt" 2>&1 || true)
+                _err=$(remove_dir "$_wt" || true)
                 if [ -d "$_wt" ]; then
                     keep "$_name" "orphaned, $(removal_failure "$_err")"
                     continue
