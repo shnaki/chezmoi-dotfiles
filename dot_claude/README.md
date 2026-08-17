@@ -6,7 +6,7 @@
 
 | ソース | 配置先 | 内容 |
 | --- | --- | --- |
-| `settings.json` | `~/.claude/settings.json` | env / model / permissions（`gh` 読み取り系と `git commit` の allow、Browser pane の deny）/ hooks / attribution / statusLine / enabledPlugins など |
+| `modify_settings.json` + `.chezmoitemplates/claude/settings.json` | `~/.claude/settings.json` | env / model / permissions（`gh` 読み取り系と `git commit` の allow、Browser pane の deny）/ hooks / attribution / statusLine / enabledPlugins など。管理キーだけをホーム側にマージし、Claude Code が生成するキー（`autoMode` など）は触らない（[後述](#settingsjson-はキー単位でマージする)） |
 | `CLAUDE.md` | `~/.claude/CLAUDE.md` | 全プロジェクト共通の言語ルールとコミット / PR ルール |
 | `output-styles/ja-concise.md` | `~/.claude/output-styles/ja-concise.md` | 日本語・簡潔応答スタイル |
 | `skills/*/` | `~/.claude/skills/*/` | スキル定義（`SKILL.md`）と付随ファイル（[skills/README.md](skills/README.md)） |
@@ -16,6 +16,35 @@
 
 `~/.claude/ship-issues/` はスキルが書き出す実行状態（中断・再開用）で、管理対象では
 ありません（[skills/README.md](skills/README.md#ship-issues)）。
+
+## settings.json はキー単位でマージする
+
+`~/.claude/settings.json` は Claude Code 自身が丸ごと書き戻すファイルです。
+`autoMode.environment` のような自動生成キーの追加や、キー順・配列の整形が入るため、
+ファイル全体を管理すると `chezmoi status` が常に差分を出し続けます。
+`autoMode.environment` には自宅 LAN の IP や private リポジトリの構成、秘密情報の置き場所が
+列挙されるので、このリポジトリ（public）へ `chezmoi re-add` で取り込むわけにもいきません。
+
+そこで chezmoi の `chezmoi:modify-template` を使い、ファイル全体ではなく
+**管理したいキーだけをホーム側の現在の内容に上書きマージ**しています。
+
+- `.chezmoitemplates/claude/settings.json` — 管理する内容の実体。**変更するときはここを編集して
+  `chezmoi apply`**
+- `modify_settings.json` — apply 時にホーム側の現在の内容を `.chezmoi.stdin` で受け取り、
+  上の内容を `merge` して書き戻す 4 行のテンプレート。`.tmpl` は付けない（付けると
+  chezmoi が先に通常のテンプレートとして評価し、`.chezmoi.stdin` が無い状態で失敗する）
+
+マージの挙動:
+
+- 管理側にあるキーは管理側の値で上書き。`permissions.allow` のような配列も丸ごと置換される
+  （ホーム側でだけ追加した allow ルールは apply で消える）
+- 管理側に無いキー（`autoMode` など）はホーム側の値がそのまま残る
+- 出力はキーがアルファベット順に並ぶ。Claude Code は既存のキー順を保って書き戻すので、
+  apply 後に `chezmoi status` が `M` になるのは Claude Code が新しいキーを追加した直後だけで、
+  その `apply` はキー順を揃えるだけで何も失わない
+- 管理キーを**削除**したいときは、`.chezmoitemplates/claude/settings.json` から消すだけでは
+  ホーム側に残る。`modify_settings.json` に一時的に
+  `{{ $_ := unset $current "キー名" }}` を足して apply し、その後その行を消す
 
 ## Codex の Import 元でもある
 
@@ -233,6 +262,8 @@ sh ~/.claude/scripts/label-sync.sh --dry-run
 
 - `dot_claude/` 配下に `exact_` プレフィックスを付けないこと。
   `~/.claude` の会話ログや認証情報が消えます。
-- `~/.claude/settings.json` は Claude Code 自身が書き換えます。
-  `chezmoi re-add` の前に `chezmoi diff` で、マシン固有の絶対パスや
-  一時的なプラグイン設定が混入していないか確認してください。
+- `~/.claude/settings.json` に `chezmoi re-add` / `chezmoi add` を使わないこと。
+  Claude Code が生成した `autoMode.environment`（自宅 LAN の IP や private リポジトリの構成、
+  秘密情報の置き場所を含む）やマシン固有の絶対パスがそのままリポジトリに入ります。
+  設定を変えるときは `.chezmoitemplates/claude/settings.json` を編集して `chezmoi apply`
+  （[settings.json はキー単位でマージする](#settingsjson-はキー単位でマージする)）。

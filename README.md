@@ -53,7 +53,7 @@ chezmoi apply
 | 未反映の対象を一覧する | `chezmoi status` |
 | 管理対象を一覧する | `chezmoi managed` |
 | ソースを編集する | `chezmoi edit ~/.vimrc` |
-| ホーム側の変更を取り込む | `chezmoi re-add` |
+| ホーム側の変更を取り込む | `chezmoi re-add`（`~/.claude/settings.json` は対象外 → [dot_claude/README.md](dot_claude/README.md#settingsjson-はキー単位でマージする)） |
 | 新しいファイルを管理下に置く | `chezmoi add ~/.foorc` |
 | リモートの更新を取得して反映 | `chezmoi update` |
 
@@ -61,7 +61,7 @@ chezmoi apply
 
 ```
 .chezmoiignore          OS ごとに配置対象を切り替える / ~/.claude の除外設定
-.chezmoitemplates/      複数パスへ配るファイルの実体
+.chezmoitemplates/      複数パスへ配るファイル / テンプレートから参照するファイルの実体
 AppData/Roaming/        Windows 用の配置先（中身は .chezmoitemplates を参照するだけ）
 dot_config/             Linux/WSL 用の配置先（同上）
 dot_claude/             ~/.claude（Claude Code の設定 → dot_claude/README.md）
@@ -93,8 +93,10 @@ Codex（`~/.codex` / `~/.agents`）に対応するディレクトリはありま
 {{- template "zed/settings.json" . -}}
 ```
 
-**Zed / VS Code / alacritty / jj の設定を変更するときは `.chezmoitemplates/` 側を編集してください。**
-`AppData/Roaming/` や `dot_config/` にあるのは参照用のラッパーです。
+**Zed / VS Code / alacritty / jj / Claude Code の設定を変更するときは `.chezmoitemplates/` 側を編集してください。**
+`AppData/Roaming/` や `dot_config/` にあるのは参照用のラッパーです。Claude Code の
+`settings.json` はラッパーではなくキー単位でマージする `modify_` テンプレートで、理由は
+[dot_claude/README.md](dot_claude/README.md#settingsjson-はキー単位でマージする) にあります。
 
 ## Claude Code の設定
 

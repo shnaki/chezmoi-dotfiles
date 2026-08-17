@@ -1,0 +1,4 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- $current := .chezmoi.stdin | default "{}" | fromJson -}}
+{{- $managed := includeTemplate "claude/settings.json" . | fromJson -}}
+{{ merge $managed $current | toPrettyJson }}
