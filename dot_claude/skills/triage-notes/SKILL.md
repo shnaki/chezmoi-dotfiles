@@ -183,7 +183,14 @@ Avoid committing the implementation worker to a specific file, class, library, o
 
 Create the final Issues with `gh issue create`.
 
-Do not invent labels, milestones, assignees, or projects unless repository conventions clearly require them.
+Label each Issue from the labels the repository already has, following
+`~/.claude/skills/label-apply/labeling-rules.md` (read it by path): one type label
+(bug / feature / docs / …) chosen from the repository's vocabulary, plus a status
+label only when the rules' evidence exists (for example `blocked` on an open
+dependency). Pass them with `--label`. Never create a label; if nothing in the
+repository fits, add none and say so in the report.
+
+Do not invent milestones, assignees, or projects unless repository conventions clearly require them.
 
 After creation, record the Issue number and URL for each Issue.
 

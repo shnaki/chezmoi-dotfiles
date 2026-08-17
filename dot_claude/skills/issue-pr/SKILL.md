@@ -250,6 +250,12 @@ Closes #<N>
 
 Mention relevant known limitations or pre-existing failures when necessary.
 
+Label the Pull Request from the labels the repository already has, following
+`~/.claude/skills/label-apply/labeling-rules.md` (read it by path): the type label
+that matches the commit type (`fix` → bug, `feat` → feature, …), or the type label
+already on Issue #<N> when it has one. Pass it with `--label`. Never create a label;
+if nothing in the repository fits, add none.
+
 # 13. Land the Pull Request
 
 Only with `--merge`. Without it, stop here and do not merge.

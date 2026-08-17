@@ -172,6 +172,12 @@ What was run or otherwise verified, including pre-existing failures.
 
 Mention known limitations and anything found in step 4 but intentionally left unfixed.
 
+Label the Pull Request from the labels the repository already has, following
+`~/.claude/skills/label-apply/labeling-rules.md` (read it by path): the type label
+that matches the commit type (`fix` → bug, `feat` → feature, …), or the type label
+already on the Issue confirmed in step 7 when it has one. Pass it with `--label`.
+Never create a label; if nothing in the repository fits, add none.
+
 Do not merge the Pull Request.
 
 # Completion conditions
