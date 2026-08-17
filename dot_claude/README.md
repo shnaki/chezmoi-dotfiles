@@ -107,9 +107,10 @@ Import が上書きするため維持できません。
 `settings.json` の `permissions.allow` に副作用のない `gh` サブコマンドだけを入れています。
 
 - 許可: `gh auth status` / `gh repo view` / `gh pr list|view|diff|checks|status` /
-  `gh issue list|view|status` / `gh search issues|prs`
+  `gh issue list|view|status` / `gh label list` / `gh search issues|prs`
 - 許可しない: `gh api`（GET も POST も同じ入口で区別できない）、`create` / `edit` /
-  `close` / `merge` / `comment` などの書き込み系。これらは都度確認のまま
+  `close` / `merge` / `comment` / `label create|edit|delete` などの書き込み系。
+  これらは都度確認のまま
 
 `git commit` も許可に入れています。ローカルに閉じていて取り消せるうえ、`cm` や
 `pr-ready` など多くのスキルが必ず通る工程のためです。auto mode の分類器が
@@ -207,6 +208,26 @@ sh ~/.claude/scripts/worktree-sweep.sh --dry-run
 `--recursive` を付けると引数のディレクトリ配下を再帰的に走査します。既定のルートは
 持たせていないので、`sh ~/.claude/scripts/worktree-sweep.sh --recursive ~/src` のように
 対象を明示して渡します。
+
+## 既定のラベルセットをリポジトリに流し込む
+
+リポジトリごとにラベルの語彙がばらつくと、`triage-notes` / `issue-pr` / `pr-ready` が
+Issue や PR に付けるラベルも決まりません。そこで既定セットを `scripts/label-sync.sh` に
+1 か所で持ち、`/label-sync` でリポジトリへ冪等に流し込みます。セットの中身は
+[skills/README.md](skills/README.md#label-sync) にあります。
+
+```bash
+sh ~/.claude/scripts/label-sync.sh --dry-run
+```
+
+- 既にある GitHub 既定ラベル（`bug` / `enhancement` / `documentation` / `question` /
+  `duplicate` / `wontfix`）は `gh label edit --name` で **rename** して取り込むので、
+  付与済みの Issue からラベルが外れない
+- セット外のラベルは `unmanaged` として報告するだけで触らない。`--prune` を付けたときだけ、
+  open / closed を問わず 1 件も付いていないラベルを消す。使用中なら keep
+- rename 元が複数あるとき（`chore` と `ci` の両方があるなど）は表の先頭のものだけ rename し、
+  残りは `superseded` として報告する。統合は `/label-apply` で付け替えてから `--prune` で消す
+- `-R owner/repo` で対象を指定できる。省略時はカレントディレクトリのリポジトリ
 
 ## 注意
 

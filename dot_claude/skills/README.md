@@ -14,8 +14,10 @@
 | [`pr-fix`](#pr-fix) | レビュー指摘を PR ブランチに反映して push する | PR 番号 + 指摘（任意） | `/pr-fix` のみ |
 | [`pr-land`](#pr-land) | 準備の整った PR をマージして後始末する | PR 番号 + `--keep-branch`（任意） | `/pr-land` のみ |
 | [`worktree-sweep`](#worktree-sweep) | 残った worktree と不要ブランチを掃除する | スクリプトへ渡すオプション | `/worktree-sweep` のみ |
+| [`label-sync`](#label-sync) | 既定のラベルセットをリポジトリに流し込む | `--dry-run` / `--prune` / `-R owner/repo`（任意） | `/label-sync` のみ |
+| [`label-apply`](#label-apply) | 既存の Issue / PR にラベルを付け直す | `--dry-run` / `--issues` / `--prs` / `--all` / 番号（任意） | `/label-apply` のみ |
 
-`cm` 以外の 9 つは `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
+`cm` 以外の 11 は `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
 起動しません。`cm` だけは `user-invocable: true` で、コミット時にモデルからも選ばれます。
 
 ## スキル間の関係
@@ -36,6 +38,10 @@ PR ─/pr-review─> 指摘 ─/pr-fix─> 修正を push ─/pr-land─> マー
 /ship-issues ──最終ステップ──> /worktree-sweep 相当の掃除
 /pr-land     ──最終ステップ──> 同上
 /worktree-sweep                            （単体でも任意のタイミングで叩ける）
+
+/label-sync ──> リポジトリのラベルを既定セットに揃える ──> /label-apply で既存 Issue / PR に付け直す
+/triage-notes /issue-pr /pr-ready ──起票・PR 作成時──> label-apply/labeling-rules.md の規則で
+                                                        既存ラベルから選んで付ける（作らない）
 ```
 
 - 起票だけしたいときは `/triage-notes`。既に Issue があるなら `/ship-issues` に
@@ -50,6 +56,11 @@ PR ─/pr-review─> 指摘 ─/pr-fix─> 修正を push ─/pr-land─> マー
 - `worktree-sweep` は `ship-issues` が残す worktree とブランチの後始末です。
   `ship-issues` と `pr-land` が最終ステップで同じスクリプトを呼ぶため、通常は手で叩く
   必要はありません。
+- ラベルは `label-sync` がリポジトリに語彙を用意し、`label-apply` が既存の Issue / PR に
+  付け直します。新規に起票・作成する側（`triage-notes` / `issue-pr` / `pr-ready`）は
+  同じ規則ファイルを読んで、**そのリポジトリに既にあるラベルから**選びます。既定セットを
+  入れていないリポジトリでは `bug` / `enhancement` など既存の語彙に合わせ、ラベルは
+  作りません。
 
 Issue の設計と実装は必ず別フェーズに分け、**1 Issue = 1 PR、1 ワーカー = 1 Issue** を守ります。
 
@@ -65,6 +76,7 @@ Skill tool で呼ぶことはできません**（モデルが選択できない�
 
 - `ship-issues` のワーカー → `issue-pr/SKILL.md`
 - `ship-issues --merge` / `issue-pr --merge` → `pr-land/SKILL.md`
+- `label-apply` / `triage-notes` / `issue-pr` / `pr-ready` → `label-apply/labeling-rules.md`
 
 このため Codex 側（Import 先は `~/.agents/skills`）では、これらのパス参照が解決しません。
 
@@ -93,8 +105,8 @@ GitHub MCP）はスキルからは使いません。対話中に Issue を検索
 
 | スキル | Codex での扱い |
 | --- | --- |
-| `cm` `triage-notes` `issue-pr` `pr-ready` `pr-review` `pr-fix` `pr-land` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` の `pr-land` 参照は `~/.claude` のパスなので解決しない |
-| `worktree-sweep` | `sh` / `git` / `gh` にしか依存しない。`~/.claude/scripts/worktree-sweep.sh` は Import の対象外なので、Codex 側では実体が要る |
+| `cm` `triage-notes` `issue-pr` `pr-ready` `pr-review` `pr-fix` `pr-land` `label-apply` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` の `pr-land` 参照と、`label-apply` 系の `labeling-rules.md` 参照は `~/.claude` のパスなので解決しない |
+| `worktree-sweep` `label-sync` | `sh` / `git` / `gh` にしか依存しない。`~/.claude/scripts/*.sh` は Import の対象外なので、Codex 側では実体が要る |
 | `ship-issues` `ship-notes` | Claude Code の Agent tool と `isolation: "worktree"` が前提。Codex には対応機能が無いため動かない |
 
 Codex が読む frontmatter は `name` と `description` だけです。
@@ -128,6 +140,8 @@ Codex が読む frontmatter は `name` と `description` だけです。
   すべて必要なら、それで 1 Issue
 - Issue 本文は Problem / Expected behavior / Acceptance criteria / Scope / Out of scope /
   Investigation notes の構成。Investigation notes は参考情報であって実装指示ではない
+- ラベルは [`label-apply/labeling-rules.md`](label-apply/labeling-rules.md) の規則で、
+  リポジトリに既にあるものから type（と根拠のある status）を `--label` で付ける。作らない
 - 起票後に依存関係を分析し、実行ウェーブに分類する
 
 ## ship-issues
@@ -179,6 +193,8 @@ Issue 番号 1 件を受け取り、PR 1 件として実装します。Issue が
 - コミット前に base branch との差分全体を見て、スコープ外の変更・デバッグコード・
   生成物の巻き込みを取り除く
 - PR 本文は Summary / Why / Verification / Issue（`Closes #<number>`）の構成
+- PR にはコミット type（`fix` → bug、`feat` → feature …）か Issue 側のラベルに合う type ラベルを、
+  リポジトリに既にあるものから `--label` で付ける（[`labeling-rules.md`](label-apply/labeling-rules.md)）
 - 引数の `#31` / Issue URL は番号に正規化する（`##31` になるのを防ぐ）
 - force-push しない。マージしない。`--merge` を付けたときだけ、PR 作成後に `pr-land` の
   手順でマージする
@@ -200,6 +216,7 @@ Issue 番号 1 件を受け取り、PR 1 件として実装します。Issue が
 - 未コミット変更は `cm` の規約でコミットする
 - 同ブランチの PR が既にあれば作らず報告。PR テンプレートがあればそれに従い、無ければ
   Summary / Why / Verification / Issue の構成。`gh pr create` で作る
+- type ラベルは `issue-pr` と同じ規則で、リポジトリに既にあるものから付ける
 - force-push しない。マージしない
 
 ## ship-notes
@@ -287,3 +304,61 @@ GitHub へのコメント投稿もしません。
 
 対象の判定基準とスクリプトのオプションは [../README.md](../README.md#worktree-のゴミを掃除する)
 に書いてあります。
+
+## label-sync
+
+既定のラベルセットをリポジトリに冪等に流し込みます。判定ロジックとラベルの定義は全て
+`~/.claude/scripts/label-sync.sh` にあり、スキルはそれを呼んで結果を要約するだけです。
+スキル側で `gh label` の書き込みを直接叩きません。
+
+- 引数はスクリプトへそのまま渡す（`--dry-run` / `--prune` / `-R owner/repo`）
+- GitHub 既定の `bug` / `enhancement` / `documentation` / `question` / `duplicate` / `wontfix`
+  は rename で取り込み、付与済みの Issue からラベルが外れないようにする
+- セット外のラベルは `unmanaged` として報告するだけ。`--prune` 時のみ、1 件も付いていない
+  ものを消す
+- rename 元が複数あるときは表の先頭のものだけ rename し、残りは `superseded` として
+  報告する。統合は `label-apply` で付け替えてから `--prune`
+
+ラベルセット（19 個）。`type/*` は `cm` の Conventional Commits type と 1:1 で、
+ちょうど 1 つ付ける。`priority/*` と `status/*` は最大 1 つ。
+
+| ラベル | 意味 | rename 元 |
+| --- | --- | --- |
+| `type/bug` | 想定どおり動かない | `bug` |
+| `type/feature` | 新機能・既存挙動の拡張（`feat`） | `enhancement` `feature` |
+| `type/refactor` | 挙動を変えない内部整理 | `refactor` |
+| `type/perf` | 性能改善 | `perf` `performance` |
+| `type/docs` | ドキュメントのみ | `documentation` `docs` |
+| `type/test` | テストの追加・修正のみ | `test` `tests` |
+| `type/chore` | 保守・ツール・ビルド・CI・依存の整理 | `chore` `ci` `build` |
+| `priority/high` `priority/medium` `priority/low` | 優先度。本文に明示があるときだけ付ける | — |
+| `status/blocked` | 他の Issue / PR / 外部要因待ち | `blocked` |
+| `status/needs-info` | 報告者からの情報待ち | `question` |
+| `status/duplicate` | 別の Issue / PR で追跡済み | `duplicate` |
+| `status/wontfix` | 対応しないと決めた | `wontfix` |
+| `dependencies` | Dependabot / Renovate の依存更新 | — |
+| `security` | 脆弱性修正・堅牢化 | — |
+| `breaking-change` | 互換性を壊す変更（`feat!:` / `BREAKING CHANGE:`） | `breaking` |
+| `good first issue` `help wanted` | GitHub 既定のまま。自動では付け外ししない | — |
+
+`invalid` はセットに含めていません（`unmanaged` として残り、`--prune` で未使用なら消える）。
+
+## label-apply
+
+既存の Issue / PR を読み直し、**リポジトリに既にあるラベルの中から**適切なものを付け直します。
+ラベルは作りません。判断規則は [`label-apply/labeling-rules.md`](label-apply/labeling-rules.md)
+にあり、`triage-notes` / `issue-pr` / `pr-ready` も同じファイルを読みます。
+
+- 既定は open な Issue と PR を各 200 件まで。`--issues` / `--prs` で絞り、`--all` で closed も
+  含める。番号や URL を渡せばその項目だけ
+- 語彙は `gh label list` から解決する。既定セット（`type/*` …）が無いリポジトリでは
+  `bug` / `enhancement` / `documentation` などの既存の語彙に対応付ける。type 系のラベルが
+  1 つも無ければ止めて `/label-sync` を案内する
+- type は PR タイトル／コミットの Conventional Commits prefix → 紐づく Issue のラベル →
+  本文の順で決め、ちょうど 1 つにする。priority と status は本文に明示的な根拠があるときだけ
+- 管理外のラベル（`area/*` など）には触らない。管理カテゴリでも根拠なく外さない。
+  迷ったら付けず、undecided として理由付きで報告する
+- 適用前に計画表（番号 / 現状 / 追加 / 削除 / 根拠）を出す。`--dry-run` はそこで止まる。
+  Issue は同じ変更ごとに `gh issue edit N1 N2 ... --add-label --remove-label` でまとめて
+  適用し、PR は `gh pr edit` を 1 件ずつ
+- type ラベルを 10 件超から外す、または 100 件超を触るときだけ、適用前に一度確認する
