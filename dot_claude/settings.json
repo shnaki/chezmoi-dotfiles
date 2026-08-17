@@ -17,6 +17,7 @@
       "Bash(gh issue list:*)",
       "Bash(gh issue view:*)",
       "Bash(gh issue status:*)",
+      "Bash(gh label list:*)",
       "Bash(gh search issues:*)",
       "Bash(gh search prs:*)",
       "Bash(git commit:*)"
