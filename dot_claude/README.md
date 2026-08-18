@@ -139,10 +139,11 @@ Import が上書きするため維持できません。
 `settings.json` の `permissions.allow` に副作用のない `gh` サブコマンドだけを入れています。
 
 - 許可: `gh auth status` / `gh repo view` / `gh pr list|view|diff|checks|status` /
-  `gh issue list|view|status` / `gh label list` / `gh search issues|prs`
+  `gh issue list|view|status` / `gh label list` / `gh release list|view` /
+  `gh run view`（`pr-fix` が失敗した checks のログを読む）/ `gh search issues|prs`
 - 許可しない: `gh api`（GET も POST も同じ入口で区別できない）、`create` / `edit` /
-  `close` / `merge` / `comment` / `label create|edit|delete` などの書き込み系。
-  これらは都度確認のまま
+  `close` / `merge` / `comment` / `review` / `release create` /
+  `label create|edit|delete` などの書き込み系。これらは都度確認のまま
 
 `git commit` も許可に入れています。ローカルに閉じていて取り消せるうえ、`cm` や
 `pr-ready` など多くのスキルが必ず通る工程のためです。auto mode の分類器が
@@ -317,6 +318,39 @@ next / reason）、`state` と `srow`（`DONE` の無い run ファイルの見�
 - `gh` が無い・未認証・remote 無しでも止まらない。PR 系の列を `?` にしてローカル
   信号だけで判定し、`repo` 行の `gh` に理由を出す
 - 他リポジトリの未完 run はファイル名を `note` に並べるだけ
+
+run ファイルの書式は `ship-issues` 側で
+[skills/ship-issues/state-file.md](skills/ship-issues/state-file.md) に固定してあります。
+このスクリプトが読むのは `- repository:` / `- started:` / `- options:` / `- requested issues:`
+の見出し行、`| #N |` で始まる表の行、`DONE` で始まる行だけです。
+
+## スキル定義の整合を検査する
+
+スキルは 17 本あり、frontmatter の形、`skills/README.md` の表、`~/.claude/skills/...` /
+`~/.claude/scripts/...` のパス参照、「SKILL.md は英語で書く」という規則で互いに縛られて
+います。どれも機械が強制していないので、1 本を直すと別の場所が黙ってずれます。
+`scripts/skill-lint.sh` はそのずれを一覧にします。スキルではなくスクリプトだけです。
+スキルを書き換えるセッションで直接叩けば足りるためです。
+
+```bash
+sh dot_claude/scripts/executable_skill-lint.sh dot_claude/skills
+```
+
+引数は skills ディレクトリで、既定は `~/.claude/skills`（配置後）。リポジトリ内では
+`dot_claude/skills` を渡します。パス参照は `dot_claude/` 配下に読み替え、スクリプトの
+`executable_` 接頭辞も吸収します。
+
+検査項目:
+
+- `SKILL.md` の frontmatter が `---` で始まり、`name` がディレクトリ名と一致し、`description`
+  があり、`cm` 以外は `disable-model-invocation: true` を持つ
+- `argument-hint` の `--flag` / `-X` が README 表の「引数」列にすべて載っていて、逆も成り立つ
+- スキル配下の `*.md` にある `~/.claude/skills/...` / `~/.claude/scripts/...` が実在する
+- `SKILL.md` の本文（frontmatter 以降）に日本語が無い（`worker-prompt.md` などの付随ファイルは
+  対象外。日本語で書くものがあるため）
+- README の表にすべてのスキルの行があり、ディレクトリの無い行が無く、`## <name>` 節がある
+
+違反は `file:line: message` で出し、1 件でもあれば終了コード 1 です。
 
 ## 注意
 
