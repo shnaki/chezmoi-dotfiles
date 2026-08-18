@@ -114,9 +114,10 @@ Determine where the session currently is:
 
 - **Already in a dedicated worktree for this Issue** — a worker started by `ship-issues`,
   or a session resuming earlier work. Continue there.
-- **In the repository's default-branch checkout** — create the isolated worktree with the
-  EnterWorktree tool, using the name `<N>-<slug>` (`<slug>` is a short kebab-case
-  description of the change).
+- **In the repository's default-branch checkout**, or in the main checkout on any other
+  branch that is not this Issue's — create the isolated worktree with the EnterWorktree
+  tool, using the name `<N>-<slug>` (`<slug>` is a short kebab-case description of the
+  change). Do not implement the Issue on a branch that belongs to other work.
 
 Then, inside the worktree:
 
@@ -263,8 +264,8 @@ Only with `--merge`. Without it, stop here and do not merge.
 Follow the workflow in `~/.claude/skills/pr-land/SKILL.md`. Read it by path; `pr-land`
 is `disable-model-invocation: true` and cannot be selected as a skill from here.
 
-If `pr-land` stops (draft, conflict, failing checks, `CHANGES_REQUESTED`), report the
-stop condition. Do not override it.
+If `pr-land` stops (draft, conflict, failing checks, `CHANGES_REQUESTED`, `BLOCKED`),
+report the stop condition. Do not override it.
 
 # Completion conditions
 

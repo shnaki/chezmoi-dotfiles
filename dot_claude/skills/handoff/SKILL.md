@@ -110,8 +110,8 @@ If `git status --short` shows tracked changes (staged or unstaged), also write:
 ~/.claude/handoff/<repo-name>-<YYYYMMDD-HHMM>.patch
 ```
 
-produced by `git diff HEAD` (staged and unstaged together). Untracked files are not in
-the patch: list them by path in the document so the reader knows they exist only in
+produced by `git diff HEAD --binary` (staged and unstaged together; `--binary` keeps
+changes to binary files applicable). Untracked files are not in the patch: list them by path in the document so the reader knows they exist only in
 this working tree. Skip the patch entirely if the diff contains a secret (see Core
 rules) and say so.
 

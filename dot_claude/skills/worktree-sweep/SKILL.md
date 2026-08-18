@@ -1,7 +1,7 @@
 ---
 name: worktree-sweep
 description: "Remove leftover agent worktrees under .claude/worktrees/ and local branches that are already merged or whose upstream is gone."
-argument-hint: "[--dry-run] [--recursive] [PATH...]"
+argument-hint: "[--dry-run] [--recursive] [--no-fetch] [--force] [PATH...]"
 disable-model-invocation: true
 ---
 
