@@ -17,8 +17,9 @@
 | [`label-sync`](#label-sync) | 既定のラベルセットをリポジトリに流し込む | `--dry-run` / `--prune` / `-R owner/repo`（任意） | `/label-sync` のみ |
 | [`label-apply`](#label-apply) | 既存の Issue / PR にラベルを付け直す | `--dry-run` / `--issues` / `--prs` / `--all` / 番号（任意） | `/label-apply` のみ |
 | [`work-status`](#work-status) | 進行中の PR / worktree / ship-issues run を一覧し、次に叩くコマンドを出す（読むだけ） | `--no-fetch`（任意） | `/work-status` のみ |
+| [`backlog-review`](#backlog-review) | open Issue 群を調査して ready / blocked / duplicate 等に分類する（読むだけ） | `--limit` / `--label` / `--milestone` / `--since` / `-R` / 番号（任意） | `/backlog-review` のみ |
 
-`cm` 以外の 12 は `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
+`cm` 以外の 13 は `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
 起動しません。`cm` だけは `user-invocable: true` で、コミット時にモデルからも選ばれます。
 
 ## スキル間の関係
@@ -46,6 +47,9 @@ PR ─/pr-review─> 指摘 ─/pr-fix─> 修正を push ─/pr-land─> マー
 
 /work-status ──> いま何が動いていて次に何を叩くかを一覧（読むだけ）
                  ──> /pr-fix /pr-review /pr-land /pr-ready /ship-issues --resume /worktree-sweep へ案内
+
+open Issue 群 ─/backlog-review─> ready / blocked / duplicate … に分類（読むだけ）
+                                 ──ready の番号──> /ship-issues、ラベルの食い違い──> /label-apply
 ```
 
 - 起票だけしたいときは `/triage-notes`。既に Issue があるなら `/ship-issues` に
@@ -68,6 +72,10 @@ PR ─/pr-review─> 指摘 ─/pr-fix─> 修正を push ─/pr-land─> マー
 - `work-status` は上のどれにも介入しない読み取り専用の一覧です。`ship-issues` が数時間
   走っている最中や中断後に、open PR・agent worktree・未完の run を横断して「次に叩く
   スキル」を行ごとに出します。自分では何も実行しません。
+- `backlog-review` は `ship-issues` に渡す番号を選ぶ前段です。open Issue を読んで
+  ready / already implemented / blocked / duplicate / obsolete / needs-info / needs investigation
+  に分類し、`/ship-issues <ready の番号>` と `/label-apply <食い違いの番号>` の案を出します。
+  GitHub 側は一切変更しません（ラベルも close もコメントもしない）。
 
 Issue の設計と実装は必ず別フェーズに分け、**1 Issue = 1 PR、1 ワーカー = 1 Issue** を守ります。
 
@@ -83,7 +91,7 @@ Skill tool で呼ぶことはできません**（モデルが選択できない�
 
 - `ship-issues` のワーカー → `issue-pr/SKILL.md`
 - `ship-issues --merge` / `issue-pr --merge` → `pr-land/SKILL.md`
-- `label-apply` / `triage-notes` / `issue-pr` / `pr-ready` → `label-apply/labeling-rules.md`
+- `label-apply` / `triage-notes` / `issue-pr` / `pr-ready` / `backlog-review` → `label-apply/labeling-rules.md`
 
 このため Codex 側（Import 先は `~/.agents/skills`）では、これらのパス参照が解決しません。
 
@@ -112,7 +120,7 @@ GitHub MCP）はスキルからは使いません。対話中に Issue を検索
 
 | スキル | Codex での扱い |
 | --- | --- |
-| `cm` `triage-notes` `issue-pr` `pr-ready` `pr-review` `pr-fix` `pr-land` `label-apply` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` の `pr-land` 参照と、`label-apply` 系の `labeling-rules.md` 参照は `~/.claude` のパスなので解決しない |
+| `cm` `triage-notes` `issue-pr` `pr-ready` `pr-review` `pr-fix` `pr-land` `label-apply` `backlog-review` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` の `pr-land` 参照と、`label-apply` 系の `labeling-rules.md` 参照は `~/.claude` のパスなので解決しない |
 | `worktree-sweep` `label-sync` `work-status` | `sh` / `git` / `gh` にしか依存しない。`~/.claude/scripts/*.sh` は Import の対象外なので、Codex 側では実体が要る |
 | `ship-issues` `ship-notes` | Claude Code の Agent tool と `isolation: "worktree"` が前提。Codex には対応機能が無いため動かない |
 
@@ -392,3 +400,31 @@ GitHub へのコメント投稿もしません。
   見えない。この限界は毎回出力に含める
 - 提案したコマンドは実行しない。「やって」と言われたら呼ぶスキル名を答える
 - `--no-fetch` で `git fetch --prune` を省く（唯一の副作用）
+
+## backlog-review
+
+open Issue 群を読んで、1 件ずつちょうど 1 つの分類に振り分けます。**読むだけ**で、
+ラベル付け・close・コメント・状態変更のどれもしません。`ship-issues` に渡す番号を選ぶ前段で、
+`ship-issues` step 3 の分類（ready / already implemented / blocked / obsolete / duplicate /
+needs investigation）に needs-info を足した 7 分類を使います。
+
+- 既定は open Issue を 200 件まで（`--limit`）。`--label`（複数は AND）/ `--milestone` /
+  `--since <日付>`（その日以降に更新されたもの）/ `-R owner/repo` で絞る。番号や URL を
+  渡せばその Issue だけ（closed でも読む）
+- 取得は `gh issue list` 1 回と `gh pr list --state all` 1 回。Issue と PR の対応は
+  `closingIssuesReferences` → 本文の `Closes #N` → `issue-pr` の `<N>-<slug>` ブランチ名 →
+  本文の `#N` 言及の順で強い根拠から取る。`gh api` は使わない（`permissions.allow` に無く、
+  タイムラインを見なくても PR 側から辿れる）
+- コメントがある Issue だけ `gh issue view --comments` で読む。重複探しの `gh search issues`
+  は Issue ごとに最大 1 回。コードは「既に実装済みか」「対象がまだあるか」を確かめる範囲だけ読む
+- 分類は優先順に判定し、先に当たったものを採用する:
+  already implemented（マージ済み / open な PR が紐づく、またはコードが既に満たす）→ duplicate
+  （残す側を名指し）→ obsolete → blocked → needs-info → needs investigation → ready。
+  blocked と needs-info の定義は [`labeling-rules.md`](label-apply/labeling-rules.md) step 4
+  のもの。迷ったら needs investigation にして何が足りないかを書き、推測で ready にしない
+- 出力は件数サマリ → 分類ごとの表（番号 / タイトル / 根拠 / 注記）→ 既存 status ラベルとの
+  食い違い一覧 → 次に叩くコマンド案（`/ship-issues <ready 番号>`、`/label-apply <食い違い番号>`、
+  duplicate / obsolete / already implemented の `gh issue close` 案）。案は出すだけで実行しない。
+  末尾に「Nothing was changed on GitHub.」を必ず書く
+- 影響範囲の見積もりやウェーブ設計はしない（`ship-issues` の仕事）。ready 同士に明白な順序
+  依存があれば `after #A` と注記するに留める
