@@ -17,6 +17,8 @@
 `~/.claude/ship-issues/` はスキルが書き出す実行状態（中断・再開用）で、管理対象では
 ありません（[skills/README.md](skills/README.md#ship-issues)）。`work-status` が
 未完の run を探すためにここを読みます（[後述](#進行中の作業を一覧する)）。
+`~/.claude/handoff/` も同様で、`handoff` スキルが書く引継ぎ文書と patch の置き場です
+（[skills/README.md](skills/README.md#handoff)）。
 
 ## settings.json はキー単位でマージする
 

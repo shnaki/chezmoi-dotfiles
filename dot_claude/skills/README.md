@@ -19,8 +19,9 @@
 | [`label-apply`](#label-apply) | 既存の Issue / PR にラベルを付け直す | `--dry-run` / `--issues` / `--prs` / `--all` / 番号（任意） | `/label-apply` のみ |
 | [`work-status`](#work-status) | 進行中の PR / worktree / ship-issues run を一覧し、次に叩くコマンドを出す（読むだけ） | `--no-fetch`（任意） | `/work-status` のみ |
 | [`backlog-review`](#backlog-review) | open Issue 群を調査して ready / blocked / duplicate 等に分類する（読むだけ） | `--limit` / `--label` / `--milestone` / `--since` / `-R` / 番号（任意） | `/backlog-review` のみ |
+| [`handoff`](#handoff) | 作業の引継ぎ文書を書く / 読んで再開する | `--resume [file]`（任意）+ メモ | `/handoff` のみ |
 
-`cm` 以外の 14 は `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
+`cm` 以外の 15 は `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
 起動しません。`cm` だけは `user-invocable: true` で、コミット時にモデルからも選ばれます。
 
 ## スキル間の関係
@@ -53,6 +54,9 @@ PR ─/pr-review─> 指摘 ─/pr-fix─> 修正を push ─/pr-land─> マー
 open Issue 群 ─/backlog-review─> ready / blocked / duplicate … に分類（読むだけ）
                                  ──ready の番号──> /ship-issues、ラベルの食い違い──> /label-apply
                                  ──needs investigation の番号──> /issue-refine
+
+任意の作業 ─/handoff─> ~/.claude/handoff/<repo>-<日時>.md（+ .patch）
+                       ─/handoff --resume─> 別セッション / 別エージェントで実状を照合して続き
 ```
 
 - 起票だけしたいときは `/triage-notes`。既に Issue があるなら `/ship-issues` に
@@ -83,6 +87,10 @@ open Issue 群 ─/backlog-review─> ready / blocked / duplicate … に分類�
   に分類し、`/ship-issues <ready の番号>` / `/issue-refine <needs investigation の番号>` /
   `/label-apply <食い違いの番号>` の案を出します。
   GitHub 側は一切変更しません（ラベルも close もコメントもしない）。
+- `handoff` はどのワークフローにも属さない横断ツールです。長い作業を別セッション
+  （クラッシュ後・コンテキスト圧縮後・翌日）や別エージェント（Agent tool のワーカー、Codex）に
+  渡すとき、会話の外に「文書 1 枚 + 未コミット差分の patch」を残します。リポジトリの状態は
+  変えません。受け取り側は `--resume` で読み、鵜呑みにせず `git` / `gh` で照合してから続けます。
 
 Issue の設計と実装は必ず別フェーズに分け、**1 Issue = 1 PR、1 ワーカー = 1 Issue** を守ります。
 
@@ -127,7 +135,7 @@ GitHub MCP）はスキルからは使いません。対話中に Issue を検索
 
 | スキル | Codex での扱い |
 | --- | --- |
-| `cm` `triage-notes` `issue-refine` `issue-pr` `pr-ready` `pr-review` `pr-fix` `pr-land` `label-apply` `backlog-review` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` の `pr-land` 参照と、`label-apply` 系の `labeling-rules.md` 参照は `~/.claude` のパスなので解決しない |
+| `cm` `triage-notes` `issue-refine` `issue-pr` `pr-ready` `pr-review` `pr-fix` `pr-land` `label-apply` `backlog-review` `handoff` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` の `pr-land` 参照と、`label-apply` 系の `labeling-rules.md` 参照は `~/.claude` のパスなので解決しない。`handoff` の `~/.claude/handoff/` は単なるディレクトリなので Codex からも読み書きできる |
 | `worktree-sweep` `label-sync` `work-status` | `sh` / `git` / `gh` にしか依存しない。`~/.claude/scripts/*.sh` は Import の対象外なので、Codex 側では実体が要る |
 | `ship-issues` `ship-notes` | Claude Code の Agent tool と `isolation: "worktree"` が前提。Codex には対応機能が無いため動かない |
 
@@ -469,3 +477,29 @@ needs investigation）に needs-info を足した 7 分類を使います。
   末尾に「Nothing was changed on GitHub.」を必ず書く
 - 影響範囲の見積もりやウェーブ設計はしない（`ship-issues` の仕事）。ready 同士に明白な順序
   依存があれば `after #A` と注記するに留める
+
+## handoff
+
+いまの作業を、会話を持たない別セッション・別エージェントが続けられる文書に落とします。
+`--resume` で受け取り側にもなります。**リポジトリの状態は変えません**（commit / stash /
+checkout / push をしない。記録するだけ）。
+
+- 引数は先頭が `--resume` なら受け取りモード（残りはファイル指定、省略時はカレント
+  リポジトリ名で始まる最新）。それ以外は自由記述のメモ（渡し先や追加指示）として文書に載せる
+- 書き出し先は `~/.claude/handoff/<repo>-<YYYYMMDD-HHMM>.md`。未コミットの tracked 変更が
+  あれば同名 `.patch`（`git diff HEAD`）を隣に置く。worktree 隔離のサブエージェントや別マシン
+  には未コミット差分が見えないため。untracked ファイルは patch に入らないので一覧だけ書く
+- 文書は英語固定の見出し（How to resume / Goal / Constraints / Repository state / Done /
+  In progress / Next steps / Decisions / Verification / Known issues / Key files）、本文は
+  会話の言語。Next steps は「run X, expect Y, then edit Z」の粒度で、会話を読まずに
+  最初の 1 歩を踏み出せる具体さにする
+- 検証済みの事実と推測を分けて書く。秘密情報・トークン・環境変数の値、使ったツール名や
+  モデル名は書かない。パスはリポジトリルート相対で、絶対パスはルートの 1 か所だけ
+- `--resume` は文書を鵜呑みにせず、`git` / `gh` で実状を取り直して差異（新しいコミット、
+  消えたブランチ、マージ済み PR）を先に列挙する。`.patch` は working tree がクリーンで
+  HEAD が一致するときだけ `git apply --check` して**適用を提案する**。自動では当てない
+- 再開後にまた渡すときは新しいファイルを書く。元のファイルは編集しない
+- 最終応答はファイルパス、Next steps の先頭 3 件、受け取り側にそのまま渡す 1 行
+  （`/handoff --resume <path>`、他ツール向けには `Read <path> and continue from "Next steps".`）
+
+このディレクトリはランタイム状態なので chezmoi では管理しません（`.chezmoiignore` で除外）。

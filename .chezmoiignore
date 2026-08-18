@@ -34,6 +34,7 @@ AppData
 .claude/daemon
 .claude/scheduled-tasks
 .claude/ship-issues
+.claude/handoff
 .claude/statsig
 .claude/todos
 .claude/ide
