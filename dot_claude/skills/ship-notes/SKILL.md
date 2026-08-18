@@ -7,9 +7,11 @@ disable-model-invocation: true
 
 Process the notes in `$ARGUMENTS` from triage through Pull Request creation.
 
-If `$ARGUMENTS` begins with `--merge`, remove that token and treat the rest as the
-notes. The option is passed on to the `ship-issues` phase, which then lands each wave's
-Pull Requests instead of stopping at Pull Request creation.
+If `$ARGUMENTS` contains `--merge` (anywhere, not only at the start), remove that token
+and treat the rest as the notes. The option is passed on to the `ship-issues` phase,
+which then lands each wave's Pull Requests instead of stopping at Pull Request creation.
+`--dry-run` is not accepted here: run `/triage-notes --dry-run` to preview the Issues,
+or `/ship-issues --dry-run` to preview the plan.
 
 # Workflow
 
