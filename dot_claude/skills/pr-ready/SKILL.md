@@ -1,13 +1,23 @@
 ---
 name: pr-ready
 description: "Turn the work on the current branch into one Pull Request: review the diff, run verification, commit, push, and open the PR."
-argument-hint: "[issue-number]"
+argument-hint: "[issue-number] [--merge]"
 disable-model-invocation: true
 ---
 
 Turn the work on the current branch into exactly one Pull Request.
 
-Optional argument: an Issue number (`$ARGUMENTS`). When given, that Issue defines the scope boundary and the Pull Request closes it. When omitted, infer the Issue from the branch and commits (see step 7); the Pull Request may have no Issue at all.
+# 0. Parse the arguments
+
+`--merge` is an option, not an Issue number. Remove it before interpreting the rest.
+With it, land the Pull Request after creating it (step 10). Without it, stop at Pull
+Request creation.
+
+What remains is an optional Issue number: `31`, `#31`, and a full Issue URL all mean
+Issue 31. Strip any leading `#` so the number is never interpolated as `##31`. When
+given, that Issue defines the scope boundary and the Pull Request closes it. When
+omitted, infer the Issue from the branch and commits (see step 7); the Pull Request may
+have no Issue at all.
 
 Follow all repository-specific instructions in:
 
@@ -24,7 +34,7 @@ Follow all repository-specific instructions in:
 - Never weaken tests or validation merely to make the change pass.
 - Never push to the default branch.
 - Never force-push.
-- Never merge the Pull Request.
+- Never merge the Pull Request, unless `--merge` was requested (step 10).
 - All GitHub operations (reading, searching, and creating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. If `gh` is unavailable or not authenticated, stop and report instead of falling back.
 
 # 1. Check the branch
@@ -37,7 +47,7 @@ Determine:
 
 If the current branch is the default branch:
 
-- if the only work is uncommitted changes, create a new branch from the current position and continue there; the uncommitted changes carry over
+- if the only work is uncommitted changes, create a new branch from the current position and continue there; the uncommitted changes carry over. Name it `<N>-<slug>` when an Issue number was given, otherwise `<slug>` — a short kebab-case description of the change, in the style of the repository's existing branch names
 - if there are already commits on the default branch that are not on the remote, stop and report. Do not create the branch yourself; moving commits off the default branch is the user's decision.
 
 # 2. Inspect the working tree and the diff
@@ -116,7 +126,8 @@ If the working tree has uncommitted changes after steps 3–5, commit them follo
 
 - group by logical theme; one theme, one commit
 - stage files explicitly; never `git add -A` or `git add .`
-- Conventional Commits format with a concise Japanese subject
+- Conventional Commits format, with the subject in the language of the repository's
+  existing commits (Japanese when the repository has no established convention)
 - no tool traces, no co-author trailers
 
 If the changes cannot be grouped confidently, ask before committing.
@@ -178,7 +189,17 @@ that matches the commit type (`fix` → bug, `feat` → feature, …), or the ty
 already on the Issue confirmed in step 7 when it has one. Pass it with `--label`.
 Never create a label; if nothing in the repository fits, add none.
 
-Do not merge the Pull Request.
+Without `--merge`, stop here. Do not merge the Pull Request.
+
+# 10. Land the Pull Request
+
+Only with `--merge`. Without it, this step does not run.
+
+Follow the workflow in `~/.claude/skills/pr-land/SKILL.md`. Read it by path; `pr-land`
+is `disable-model-invocation: true` and cannot be selected as a skill from here.
+
+If `pr-land` stops (draft, conflict, failing checks, `CHANGES_REQUESTED`, `BLOCKED`),
+report the stop condition. Do not override it.
 
 # Completion conditions
 
@@ -190,6 +211,7 @@ The task is complete only when:
 - the branch has been pushed
 - exactly one Pull Request exists for the branch
 - there are no unintended uncommitted changes
+- with `--merge`: the Pull Request is merged, or the reason it is not is reported
 
 # Final response
 
@@ -202,3 +224,4 @@ Return:
 - changes removed from the diff, if any
 - the Issue that was closed, or unconfirmed Issue candidates
 - follow-up work discovered but intentionally excluded
+- with `--merge`: the merge result, and the cleanup `pr-land` performed
