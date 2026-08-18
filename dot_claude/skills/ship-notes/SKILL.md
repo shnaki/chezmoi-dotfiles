@@ -1,17 +1,20 @@
 ---
 name: ship-notes
 description: "Turn notes into GitHub Issues and then orchestrate implementation of the created Issues as isolated Pull Requests."
-argument-hint: "[--merge] [--ignore-checks] [notes-file-or-text]"
+argument-hint: "[--merge] [--ignore-checks] [--worker-model <alias>] [notes-file-or-text]"
 disable-model-invocation: true
 ---
 
 Process the notes in `$ARGUMENTS` from triage through Pull Request creation.
 
-If `$ARGUMENTS` contains `--merge` or `--ignore-checks` (anywhere, not only at the
-start), remove those tokens and treat the rest as the notes. Both are passed on to the
-`ship-issues` phase unchanged: `--merge` lands each wave's Pull Requests instead of
-stopping at Pull Request creation, and `--ignore-checks` (only meaningful with
-`--merge`) lets `pr-land` merge where GitHub Actions cannot run.
+If `$ARGUMENTS` contains `--merge`, `--ignore-checks`, or `--worker-model <alias>`
+(anywhere, not only at the start), remove those tokens — for `--worker-model` both the
+flag and the alias after it — and treat the rest as the notes. All three are passed on
+to the `ship-issues` phase unchanged: `--merge` lands each wave's Pull Requests instead
+of stopping at Pull Request creation, `--ignore-checks` (only meaningful with `--merge`)
+lets `pr-land` merge where GitHub Actions cannot run, and `--worker-model <alias>` runs
+the implementation workers on that model (`opus` / `sonnet` / `haiku` / `fable`) while
+the triage phase and the orchestrator keep the session's model.
 `--dry-run` is not accepted here: run `/triage-notes --dry-run` to preview the Issues,
 or `/ship-issues --dry-run` to preview the plan.
 
@@ -31,8 +34,8 @@ falling back.
 1. Triage the notes following `triage-notes` (read by path).
 2. Create the resulting GitHub Issues.
 3. Collect only the newly created actionable Issue numbers.
-4. Process those Issues following `ship-issues` (read by path), passing `--merge` and
-   `--ignore-checks` through when they were given. `ship-issues` writes its state file
+4. Process those Issues following `ship-issues` (read by path), passing `--merge`,
+   `--ignore-checks`, and `--worker-model <alias>` through when they were given. `ship-issues` writes its state file
    as usual; an interrupted run is resumed with `/ship-issues --resume`, not with this
    skill.
 5. Return the combined result.

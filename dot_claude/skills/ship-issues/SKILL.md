@@ -1,7 +1,7 @@
 ---
 name: ship-issues
 description: "Orchestrate implementation of multiple existing GitHub Issues by analyzing dependencies, planning safe parallel execution, and delegating each Issue to an isolated worker that creates exactly one Pull Request."
-argument-hint: "[issue-numbers...] [--merge] [--ignore-checks] [--dry-run] [--resume] [--no-merge]"
+argument-hint: "[issue-numbers...] [--merge] [--ignore-checks] [--dry-run] [--resume] [--no-merge] [--worker-model <alias>]"
 disable-model-invocation: true
 ---
 
@@ -79,6 +79,7 @@ Then establish the repository facts every later step relies on:
 ## Options
 
 Remove these tokens from `$ARGUMENTS` before interpreting the rest as Issue numbers.
+`--worker-model` takes a value: remove both the flag and the alias that follows it.
 
 ### `--merge`
 
@@ -117,6 +118,26 @@ for the remaining waves); write the combined set back to the file.
 Only with `--resume`: remove `--merge` (and `--ignore-checks`) from the recorded
 options, so the remaining waves stop at Pull Request creation. Without `--resume` it
 does nothing.
+
+### `--worker-model <alias>`
+
+Run the implementation workers (step 7) on a different model than the session that runs
+this orchestrator. `<alias>` is passed as the `model` parameter of each worker's Agent
+call and must be one the Agent tool accepts: `opus`, `sonnet`, `haiku`, or `fable`. Any
+other value: stop and report before reading the Issues; do not silently drop it or guess.
+
+Without this option, the Agent call carries no `model` and the workers inherit the
+session's model (the behaviour before this option existed).
+
+The option changes only the workers. The orchestrator steps (classification, dependency
+analysis, waves, `pr-land`, the sweep) run on the session's model regardless. It is
+recorded in the state file's `options` line like every other option, shown in the
+Execution plan (also under `--dry-run`), and, with `--resume`, a value given on the
+command line replaces the recorded one.
+
+Choose the alias for the Issues at hand: workers do the implementation, verification, and
+diff review, so a cheaper model pays off on small, well-refined Issues and can cost more
+in `pr-fix` rounds on large or vague ones.
 
 # Progress state
 
@@ -327,6 +348,8 @@ Start each worker with the Agent tool:
 - one Agent call per Issue, never one call covering several Issues
 - pass `isolation: "worktree"` so the worker gets its own git worktree
 - start the workers for a wave in a single message so they run concurrently
+- with `--worker-model <alias>`, pass `model: "<alias>"` on every worker's Agent call;
+  without it, pass no `model` at all (the template header shows the call shape)
 - give each worker exactly one Issue number and instruct it to follow the
   `issue-pr` skill workflow for that Issue
 
@@ -581,6 +604,8 @@ Example:
 - Wave 1: #101, #102, #104
 - Wave 2: #103 after #101
 - Deferred: #105 pending #103 merge
+
+With `--worker-model`, add one line naming the alias the workers ran on.
 
 ## Dependencies and conflicts
 

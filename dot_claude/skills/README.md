@@ -7,10 +7,10 @@
 | [`cm`](#cm) | Conventional Commits でコミットする | コミットメッセージまたは変更の説明 | `/cm`（モデルからの自動起動も可） |
 | [`triage-notes`](#triage-notes) | メモを調査して GitHub Issue を起票する | `--dry-run`（任意）+ メモのファイルまたはテキスト | `/triage-notes` のみ |
 | [`issue-refine`](#issue-refine) | 既存 Issue を調査して実装可能な本文に書き換える | `--dry-run` / `--split`（任意）+ Issue 番号の並び | `/issue-refine` のみ |
-| [`ship-issues`](#ship-issues) | 既存 Issue 群を並列ワーカーに割って PR 化する | Issue 番号の並び + `--merge` / `--ignore-checks` / `--dry-run` / `--resume` / `--no-merge`（任意） | `/ship-issues` のみ |
+| [`ship-issues`](#ship-issues) | 既存 Issue 群を並列ワーカーに割って PR 化する | Issue 番号の並び + `--merge` / `--ignore-checks` / `--dry-run` / `--resume` / `--no-merge` / `--worker-model <alias>`（任意） | `/ship-issues` のみ |
 | [`issue-pr`](#issue-pr) | Issue 1 件を PR 1 件として実装する | Issue 番号 + `--merge` / `--ignore-checks`（任意） | `/issue-pr` のみ |
 | [`pr-ready`](#pr-ready) | 現在ブランチの作業を diff 確認 → 検証 → コミット → PR にする | Issue 番号 + `--merge` / `--ignore-checks`（任意） | `/pr-ready` のみ |
-| [`ship-notes`](#ship-notes) | メモ → Issue → PR を通しで回す | `--merge` / `--ignore-checks`（任意）+ メモのファイルまたはテキスト | `/ship-notes` のみ |
+| [`ship-notes`](#ship-notes) | メモ → Issue → PR を通しで回す | `--merge` / `--ignore-checks` / `--worker-model <alias>`（任意）+ メモのファイルまたはテキスト | `/ship-notes` のみ |
 | [`pr-review`](#pr-review) | PR を独立した立場でレビューする | PR 番号 + `--post`（任意） | `/pr-review` のみ |
 | [`ci-review`](#ci-review) | 落ちた CI のログを読み、pr-caused / pre-existing / flaky / infrastructure（billing 含む）/ ci-definition / needs investigation に分類する（読むだけ） | PR 番号 / `--run <id>` / `--branch <name>` + `--workflow` / `-R owner/repo`（任意） | `/ci-review` のみ |
 | [`pr-fix`](#pr-fix) | レビュー指摘・conflict・checks 失敗を PR ブランチに反映して push する | PR 番号 + `--checks-only` / 指摘（任意） | `/pr-fix` のみ |
@@ -338,6 +338,15 @@ required review のあるリポジトリでは checks が緑でも `BLOCKED` で
 `--dry-run` を付けると、分類とウェーブ計画（step 6）まで進めて state file を書き、
 ワーカーを起こさずに終わります。数時間走る前に計画だけ確認する用途です。
 
+`--worker-model <alias>` を付けると、ワーカーの Agent 呼び出しに `model: "<alias>"` を
+渡し、実装だけを別モデルで走らせます（`opus` / `sonnet` / `haiku` / `fable` のいずれか。
+それ以外は止まって報告）。省略時は `model` を渡さず、ワーカーはセッションのモデルを
+継承します。分類・依存分析・ウェーブ設計・`pr-land`・掃除はセッションのモデルのままで、
+変わるのはワーカーだけです。トークンの大半は並列で長く走るワーカーが使うので、
+issue-refine 済みの小さな Issue 群ならここを安いモデルに落とす効果が大きく、逆に大きい・
+曖昧な Issue では `pr-fix` の手戻りで高くつくことがあります。state file の options 行に
+値ごと記録され、`--resume` でコマンドラインに付け直せば上書きできます。
+
 実行計画と Issue ごとの状態は `~/.claude/ship-issues/<repo>-<日時>.md` に書き出します。
 書式は [`ship-issues/state-file.md`](ship-issues/state-file.md) のテンプレートに固定して
 います。`work-status.sh` が見出し行（`- repository:` など）と `| #N |` で始まる表と `DONE`
@@ -397,7 +406,8 @@ Issue 番号 1 件を受け取り、PR 1 件として実装します。Issue が
 1. メモを `triage-notes` のワークフローで triage する
 2. Issue を起票する
 3. **新しく起票された actionable な Issue 番号だけ**を集める
-4. それらを `ship-issues` のワークフローで処理する（`--merge` / `--ignore-checks` を透過）
+4. それらを `ship-issues` のワークフローで処理する（`--merge` / `--ignore-checks` /
+   `--worker-model <alias>` を透過。起票フェーズはセッションのモデルのまま）
 5. 両者の結果と `ship-issues` の state file パスを合わせて返す
 
 重複・obsolete・アクション不要と判断したメモは実装フェーズに渡しません。

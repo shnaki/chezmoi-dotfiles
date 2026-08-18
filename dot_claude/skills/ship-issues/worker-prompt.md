@@ -2,7 +2,9 @@
 
 Template for the Agent tool call that `ship-issues` makes for one Issue
 (`SKILL.md` step 7). One call per Issue, `isolation: "worktree"`,
-`subagent_type: "general-purpose"`.
+`subagent_type: "general-purpose"`, and — only when the run was given
+`--worker-model <alias>` — `model: "<alias>"`. Without that option, do not set `model`;
+the worker then inherits the session's model.
 
 Fill every `<...>` slot: `<owner/repo>`, `<base-branch>`, `<verification-command>`, and
 `<toolchain-note>` come from the repository facts gathered in step 1; `<N>`,

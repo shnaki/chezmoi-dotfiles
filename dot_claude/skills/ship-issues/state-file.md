@@ -7,7 +7,8 @@ Template for the run file that `ship-issues` writes to
 
 - the `- key: value` header lines right after the H1, one per line: it reads
   `repository`, `started`, `options`, and `requested issues`; `base` is for human
-  readers (and `--resume`) and is not parsed
+  readers (and `--resume`) and is not parsed. `options` is the run's option tokens as
+  given, values included (`--worker-model opus`), so `--resume` can read them back
 - one table whose data rows begin with `| #<N> |` — the Issue number is the first cell,
   and the branch name appears somewhere in the row
 - a line that begins with `DONE` (or `**DONE**`) once the run has finished
@@ -30,7 +31,7 @@ instead of appending a second table.
 
 - repository: <owner/repo>
 - started: <YYYY-MM-DD HH:MM>
-- options: <--merge --dry-run … | none>
+- options: <--merge --dry-run --worker-model opus … | none>
 - requested issues: #<N1> #<N2> …
 - base: <base-branch>
 
