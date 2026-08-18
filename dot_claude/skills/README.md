@@ -319,8 +319,11 @@ GitHub へのコメント投稿もしません。
 - rename 元が複数あるときは表の先頭のものだけ rename し、残りは `superseded` として
   報告する。統合は `label-apply` で付け替えてから `--prune`
 
-ラベルセット（19 個）。`type/*` は `cm` の Conventional Commits type と 1:1 で、
-ちょうど 1 つ付ける。`priority/*` と `status/*` は最大 1 つ。
+ラベルセット（19 個）。`type/*` は `cm` の Conventional Commits type から一意に決まる
+多対一の対応で（`fix` → bug、`feat` → feature、`docs` / `refactor` / `perf` / `test` は同名、
+`chore` / `ci` / `build` / `style` は chore、`revert` は元の変更の type）、ちょうど 1 つ付ける。
+逆向きは一意ではない（`type/chore` から commit type は決まらない）。
+`priority/*` と `status/*` は最大 1 つ。
 
 | ラベル | 意味 | rename 元 |
 | --- | --- | --- |
@@ -330,7 +333,7 @@ GitHub へのコメント投稿もしません。
 | `type/perf` | 性能改善 | `perf` `performance` |
 | `type/docs` | ドキュメントのみ | `documentation` `docs` |
 | `type/test` | テストの追加・修正のみ | `test` `tests` |
-| `type/chore` | 保守・ツール・ビルド・CI・依存の整理 | `chore` `ci` `build` |
+| `type/chore` | 保守・ツール・ビルド・CI・依存の整理（commit type の `chore` / `ci` / `build` / `style` をまとめる） | `chore` `ci` `build` |
 | `priority/high` `priority/medium` `priority/low` | 優先度。本文に明示があるときだけ付ける | — |
 | `status/blocked` | 他の Issue / PR / 外部要因待ち | `blocked` |
 | `status/needs-info` | 報告者からの情報待ち | `question` |
