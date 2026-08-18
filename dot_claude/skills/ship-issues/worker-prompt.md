@@ -33,8 +33,9 @@ so a subagent cannot select it. Make the worker read the file by path instead.
    スコープ外の refactoring・cleanup・formatting・rename・依存更新を混ぜない。
    別の問題を見つけたら報告のみに留める。
 4. リポジトリの `AGENTS.md` / `CLAUDE.md` / `.claude/rules/` に従う。
-   ユーザー向けの文章・ドキュメント・コミットメッセージは日本語。
-   コミットメッセージは Conventional Commits 形式。
+   コミットメッセージ・PR 本文の言語は、そのリポジトリの既存コミット・PR に合わせる
+   （`git log`、`gh pr list` で確認。慣例が無ければ日本語）。最終報告は日本語。
+   コミットメッセージは Conventional Commits 形式（リポジトリに別の規約があればそちら）。
 5. コミットメッセージ・PR 本文・Issue 本文・コードコメントに、作業に使ったツールの痕跡
    （署名、`Co-Authored-By` トレーラ、生成元を示す定型句、装飾絵文字）を一切残さない。
 6. GitHub の操作はすべて `gh` で行う。`gh` が使えない、または未認証なら、別の手段に

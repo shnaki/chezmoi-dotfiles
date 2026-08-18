@@ -1,7 +1,7 @@
 ---
 name: ship-issues
 description: "Orchestrate implementation of multiple existing GitHub Issues by analyzing dependencies, planning safe parallel execution, and delegating each Issue to an isolated worker that creates exactly one Pull Request."
-argument-hint: "[issue-numbers...] [--merge] [--resume]"
+argument-hint: "[issue-numbers...] [--merge] [--dry-run] [--resume]"
 disable-model-invocation: true
 ---
 
@@ -72,10 +72,24 @@ Land each wave's Pull Requests before starting the next wave (step 10).
 
 Without this option, the run stops at Pull Request creation and nothing is merged.
 
+Merging needs a repository where the user can merge without another person's approval.
+Where branch protection requires a review, every Pull Request stays `BLOCKED` and
+`pr-land` records each one as `PR created, not merged`; that is expected, not a failure.
+
+### `--dry-run`
+
+Stop after the execution plan (step 6). Write the state file with the plan and a `DONE`
+marker, print the Execution plan, Dependencies and conflicts, and Not implemented
+sections of the final response, and end. Start no worker, create no branch, change
+nothing on GitHub. May be combined with `--merge`; the plan then also shows the merge
+order.
+
 ### `--resume`
 
 Continue an interrupted run instead of starting a new one (see below). Issue numbers
-may be omitted; they come from the state file.
+may be omitted; they come from the state file. Options given on the command line are
+added to the options recorded in the state file (so `--resume --merge` turns merging on
+for the remaining waves); write the combined set back to the file.
 
 # Progress state
 
@@ -89,16 +103,13 @@ State file:
 ~/.claude/ship-issues/<repo-name>-<YYYYMMDD-HHMM>.md
 ```
 
-`<repo-name>` is the repository name, `<YYYYMMDD-HHMM>` the time the run started.
-Create the directory if it does not exist.
+`<repo-name>` is the repository directory name, `<YYYYMMDD-HHMM>` the time the run
+started. Create the directory if it does not exist.
 
-Record:
-
-- repository, base branch, the requested Issue list, and the options in effect
-- each Issue's classification from step 3
-- the wave plan from step 6
-- per Issue: status, branch, worktree path, Agent task id, Pull Request URL, merge state, notes
-- a `DONE` marker once step 15 has finished
+Write the file from the template in `~/.claude/skills/ship-issues/state-file.md`. Read
+it and keep its shape exactly: the header lines, the table columns, and the `DONE`
+marker are what `~/.claude/scripts/work-status.sh` parses to show this run. A file in
+another shape is invisible to `/work-status`.
 
 Write it before starting the workers of a wave, again as each worker finishes, again
 when a wave completes, and — with `--merge` — after each merge. A stale state file is
@@ -157,13 +168,17 @@ Do not create competing implementations unnecessarily.
 Classify each Issue as one of:
 
 - ready
-- already implemented
+- already implemented (a merged Pull Request or the code itself already covers it)
+- in progress (an open Pull Request already implements it; note its number and whether
+  it is a draft)
 - blocked
 - obsolete
 - duplicate
 - needs investigation
 
-Do not start a worker for an Issue that is clearly already implemented, obsolete, or duplicated.
+Do not start a worker for an Issue that is clearly already implemented, in progress,
+obsolete, or duplicated. For an in-progress Issue, point at the open Pull Request
+(`/pr-review <M>` or `/pr-land <M>`) instead of starting a competing implementation.
 
 Do not start a worker for an Issue that needs investigation either. Report it and
 suggest `/issue-refine <N>` so the Issue is made implementable before it is shipped;
@@ -254,6 +269,12 @@ Prefer safe concurrency over maximum concurrency.
 Do not serialize Issues without a meaningful reason.
 
 Do not force concurrency when dependencies or shared change surfaces make it risky.
+
+Write the state file now, with every Issue's class and wave.
+
+Under `--dry-run`, this is the end of the run: mark the state file `DONE`, report as
+described in "Final response" (Execution plan, Dependencies and conflicts, Not
+implemented, State file), and stop. Nothing below runs.
 
 # 7. Delegate each Issue to an isolated worker
 
@@ -353,9 +374,10 @@ Read it by path; `pr-land` is `disable-model-invocation: true` and cannot be sel
 as a skill from here.
 
 - one Pull Request at a time, in an order that respects the dependencies found in step 5
-- `pr-land` stops on a red light (draft, conflict, failing checks, `CHANGES_REQUESTED`).
-  When it stops, record the Issue as `PR created, not merged (<reason>)` and continue
-  with the remaining Pull Requests. Do not override the stop condition.
+- `pr-land` stops on a red light (draft, conflict, failing checks, `CHANGES_REQUESTED`,
+  `BLOCKED` by branch protection after the checks are green). When it stops, record the
+  Issue as `PR created, not merged (<reason>)` and continue with the remaining Pull
+  Requests. Do not override the stop condition.
 - do not fix failing checks or review findings here. That is `pr-fix`, run separately.
 - update the state file after each merge
 
@@ -465,7 +487,7 @@ items manually. In particular:
 Both need the owning session or shell closed before a re-run. Do not work around them
 with `rm -rf`, `git worktree remove --force`, or `git worktree unlock`.
 
-Then mark the state file `DONE`.
+Then mark the state file `DONE` (a line beginning with `DONE`, as in the template).
 
 # Completion status
 
@@ -475,6 +497,7 @@ Use one of the following statuses for each requested Issue:
 - PR merged (`--merge` only)
 - PR created, not merged (`--merge` only; include the reason `pr-land` stopped)
 - already implemented
+- in progress (name the open Pull Request)
 - blocked
 - deferred
 - duplicate
@@ -528,4 +551,5 @@ Report any important:
 The path of the state file, so an interrupted run can be resumed with
 `/ship-issues --resume`.
 
-Without `--merge`, do not merge any Pull Request.
+Without `--merge`, do not merge any Pull Request. Under `--dry-run`, say clearly that
+no worker was started and nothing was changed.
