@@ -1,7 +1,7 @@
 ---
 name: work-status
 description: "Show what is in flight in the current repository — open Pull Requests, agent worktrees and branches, unfinished ship-issues runs — with the next command for each row. Read-only."
-argument-hint: "[--no-fetch]"
+argument-hint: "[--no-fetch] [PATH]"
 disable-model-invocation: true
 ---
 
@@ -24,7 +24,8 @@ sh ~/.claude/scripts/work-status.sh $ARGUMENTS
 ```
 
 With no arguments it targets the repository of the current directory; running from
-inside an agent worktree is fine. `--no-fetch` skips `git fetch --prune`.
+inside an agent worktree is fine. `PATH` targets another checkout. `--no-fetch` skips
+`git fetch --prune`.
 
 If the script is missing, report that and stop.
 
@@ -59,6 +60,9 @@ Always end with this, in the user's language:
   file entry are hints.
 - Background Agent tasks are visible only in the session that started them. A run
   driven by another session shows up here only through its worktree, branch, and PR.
+- A review left by `pr-review --post` is a comment, not a review decision, so a Pull
+  Request keeps showing `/pr-review N` after it. Read the comments before reviewing
+  again.
 - GitHub state is as of this run. Nothing was modified.
 
 # 4. Do not act
