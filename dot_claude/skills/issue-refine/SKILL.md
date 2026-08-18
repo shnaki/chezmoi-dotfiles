@@ -9,15 +9,16 @@ Refine the GitHub Issues named in `$ARGUMENTS` so that an implementation worker
 (`issue-pr`, or a `ship-issues` worker) can start from the Issue body alone.
 
 Invoking this skill is the authorization to rewrite the body, title, and labels of the
-selected Issues. Do not ask for confirmation again before applying, unless step 7 says
-so.
+selected Issues. Do not ask for confirmation again before applying (`--dry-run` is the
+way to look first).
 
 This skill is responsible for investigation and Issue design only. Do not implement
 any changes. Do not create branches or Pull Requests.
 
 All GitHub operations (reading, searching, editing, and creating Issues) go through
-the GitHub CLI (`gh`). Do not use another GitHub client. If `gh` is unavailable or not
-authenticated, stop and report instead of falling back.
+the GitHub CLI (`gh`). Do not use another GitHub client. Before the first `gh` call,
+run `gh auth status`; if `gh` is unavailable or not authenticated, stop and report
+instead of falling back.
 
 Follow all repository-specific instructions in:
 
@@ -63,7 +64,7 @@ Process each Issue independently. A failure on one Issue does not stop the other
 For each Issue:
 
 ```bash
-gh issue view <N> --comments --json number,title,body,labels,state,stateReason,url,comments
+gh issue view <N> --json number,title,body,labels,state,stateReason,url,comments
 ```
 
 Also read linked Issues and Pull Requests when the body or comments reference them.
@@ -83,7 +84,18 @@ Do not start rewriting before understanding the Issue.
 
 For each Issue, check whether:
 
-- a Pull Request already implements it (`gh pr list --search "<N>" --state all`)
+- a Pull Request already implements it. Look it up from the strongest signal down, the
+  way `backlog-review` does:
+
+  ```bash
+  gh pr list --state all --limit 300 --json number,state,isDraft,headRefName,closingIssuesReferences,body
+  ```
+
+  A Pull Request belongs to Issue N when its `closingIssuesReferences` names N, else
+  when its body says `Closes #N` (or `Fixes` / `Resolves`), else when its `headRefName`
+  starts with `N-`. Do not use `gh pr list --search "<N>"`: a full-text search for `31`
+  also matches `#310` and misses a Pull Request that only links the Issue through
+  `closingIssuesReferences`
 - another Issue tracks the same work (`gh issue list --search "<keywords>" --state all`)
 - the Issue is closed, obsolete, or already resolved by a merged change
 - the Issue depends on unresolved work
@@ -91,14 +103,21 @@ For each Issue, check whether:
 Give each Issue one verdict:
 
 - refinable
-- already implemented
+- already implemented (a merged Pull Request, or the code, already covers it)
+- in progress (an open Pull Request implements it; name it and whether it is a draft)
 - duplicate (name the target)
 - obsolete
 - blocked (name the dependency; still refinable when the rest is clear)
 
-Only `refinable` and `blocked` Issues get a new body. The others are reported with the
-evidence and left as they are: do not close them, do not edit them, do not open
-replacements.
+Only `refinable`, `in progress`, and `blocked` Issues get a new body: an Issue with an
+open Pull Request still benefits from clear acceptance criteria (the reviewer reads
+them), but say in the report that a Pull Request exists so nobody starts a second
+implementation. The others are reported with the evidence and left as they are: do not
+close them, do not edit them, do not open replacements.
+
+This skill is where `ship-issues` and `backlog-review` send an Issue they classified as
+`needs investigation`; that classification is not a verdict here — investigate and give
+it one of the verdicts above.
 
 # 3. Investigate the repository
 
@@ -212,7 +231,8 @@ Under `--dry-run`, stop here and say clearly that nothing was changed.
 # 7. Apply
 
 For each Issue that will change, write the body to a temporary file outside the
-repository (never inside the working tree) and edit the Issue:
+repository (never inside the working tree; `mktemp` or a file under `$TMPDIR`) and edit
+the Issue:
 
 ```bash
 gh issue edit <N> --body-file <file>            # add --title "<new title>" only when it changed
@@ -227,7 +247,7 @@ Then set labels following the rules file:
 - never remove a label without the rules' evidence
 
 ```bash
-gh issue edit <N> --add-label "a,b" --remove-label "c"
+gh issue edit <N> --add-label "a,b"                 # --remove-label "c" only with the rules' evidence
 ```
 
 Under `--split`, for each Issue with a split proposal, create the child Issues first

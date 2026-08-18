@@ -14,7 +14,7 @@ Do not push commits.
 Do not merge the Pull Request.
 Do not write to GitHub, except the single comment that `--post` asks for (step 10).
 
-All GitHub operations (reading, searching, and creating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. If `gh` is unavailable or not authenticated, stop and report instead of falling back.
+All GitHub operations (reading, searching, and creating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. Before the first `gh` call, run `gh auth status`; if `gh` is unavailable or not authenticated, stop and report instead of falling back.
 
 # 0. Parse the arguments
 
@@ -177,6 +177,27 @@ A valid but limited problem that may reasonably be fixed later.
 
 Do not use severity to exaggerate uncertain findings.
 
+# 10. Post the review (`--post` only)
+
+Without `--post`, skip this step; nothing is written to GitHub.
+
+With `--post`, write the final response (the section below) — starting with the verdict
+line — to a temporary file outside the repository, in the language the repository's
+Pull Requests use, and post it as one comment:
+
+```bash
+gh pr review <N> --comment --body-file <file>
+```
+
+Always `--comment`, never `--approve` or `--request-changes`: GitHub rejects both from
+the Pull Request's own author, which is the usual case here, and this skill's verdict is
+advice, not a review decision that gates the merge. `pr-fix` reads the comment back as
+a finding source in another session (it recognises the verdict line), and
+`work-status` keeps suggesting `/pr-review <N>` because `reviewDecision` does not
+change; that is expected.
+
+Do not leave tool traces in the comment. Report the comment URL.
+
 # Final response
 
 Start with a verdict:
@@ -212,24 +233,3 @@ State whether the Pull Request stays within the linked Issue.
 State whether the provided tests and verification appear sufficient.
 
 Do not modify the Pull Request.
-
-# 10. Post the review (`--post` only)
-
-Without `--post`, skip this step; nothing is written to GitHub.
-
-With `--post`, write the final response above — starting with the verdict line — to a
-temporary file outside the repository, in the language the repository's Pull Requests
-use, and post it as one comment:
-
-```bash
-gh pr review <N> --comment --body-file <file>
-```
-
-Always `--comment`, never `--approve` or `--request-changes`: GitHub rejects both from
-the Pull Request's own author, which is the usual case here, and this skill's verdict is
-advice, not a review decision that gates the merge. `pr-fix` reads the comment back as
-a finding source in another session (it recognises the verdict line), and
-`work-status` keeps suggesting `/pr-review <N>` because `reviewDecision` does not
-change; that is expected.
-
-Do not leave tool traces in the comment. Report the comment URL.

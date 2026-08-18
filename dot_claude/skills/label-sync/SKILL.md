@@ -43,6 +43,10 @@ Summarize the script output, grouped by action:
   example `ci` next to `type/chore`, or `bug` when `type/bug` already existed). Left
   alone; Issues still carry it. Always list these with the set label named by the script
 - `delete` — only with `--prune`
+- `retain` — only with `--prune`: an unmanaged or superseded label that was not deleted
+  because it is still in use, or because `gh` could not answer whether it is (offline,
+  rate limit). List these by name with the reason; they count as `unmanaged` /
+  `superseded`, not as `keep`
 - `failed` — every `gh` error, verbatim
 
 A non-zero exit means at least one `gh` write failed. Report it plainly; do not retry

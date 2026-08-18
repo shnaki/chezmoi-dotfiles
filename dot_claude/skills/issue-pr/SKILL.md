@@ -65,8 +65,18 @@ Do not begin editing before understanding the Issue.
 
 Check whether:
 
-- a Pull Request already exists for this Issue (`gh pr list --search "<N>" --state all`)
-- another branch appears to implement the same change
+- a Pull Request already exists for this Issue. Look it up from the strongest signal
+  down (`closingIssuesReferences` naming N → `Closes #N` in the body → a `headRefName`
+  starting with `N-`):
+
+  ```bash
+  gh pr list --state all --limit 300 --json number,state,isDraft,headRefName,closingIssuesReferences,body
+  ```
+
+  Do not use `gh pr list --search "<N>"`: a full-text search for `31` also matches
+  `#310` and misses a Pull Request that only links the Issue through
+  `closingIssuesReferences`
+- another branch appears to implement the same change (`git branch -a --list "<N>-*"`)
 - the Issue has become obsolete
 - the Issue depends on an unmerged change
 
@@ -128,6 +138,9 @@ Then, inside the worktree:
 ```bash
 git fetch origin
 ```
+
+If HEAD is detached (`git symbolic-ref --quiet HEAD` fails), stop and report: the
+worktree is not on a branch and this skill does not guess which one was meant.
 
 Confirm the worktree's HEAD contains the current tip of the base branch
 (`git merge-base --is-ancestor origin/<base> HEAD`). If it does not and the tree is

@@ -14,8 +14,8 @@ ones) and `/label-apply` (which fixes labels). It hands numbers to those; it doe
 their work.
 
 All GitHub operations go through the GitHub CLI (`gh`). Do not use another GitHub
-client. If `gh` is unavailable or not authenticated, stop and report instead of falling
-back.
+client. Before the first `gh` call, run `gh auth status`; if `gh` is unavailable or not
+authenticated, stop and report instead of falling back.
 
 # Core rules
 
@@ -72,6 +72,12 @@ One call, not one per Issue:
 gh pr list --state all --limit 300 \
   --json number,title,body,state,isDraft,mergedAt,headRefName,closingIssuesReferences,url
 ```
+
+When this returns 300 entries the index is capped, and an older merged Pull Request
+may be missing, so an `already implemented` Issue can look `ready`. Open the report
+with `PR index capped at 300; older merged PRs may be missed` in that case, and treat
+`ready` verdicts on old Issues with corresponding care (check the code, as step 4-1
+already asks).
 
 Match Pull Requests to Issues by, in order of strength:
 

@@ -16,8 +16,8 @@ or version files, and does not push. The tag is created by `gh release create` o
 GitHub, never with `git tag` / `git push --tags` here.
 
 All GitHub operations go through the GitHub CLI (`gh`). Do not use another GitHub
-client. If `gh` is unavailable or not authenticated, stop and report instead of falling
-back.
+client. Before the first `gh` call, run `gh auth status`; if `gh` is unavailable or not
+authenticated, stop and report instead of falling back.
 
 # 0. Parse the arguments
 
@@ -38,7 +38,7 @@ Anything else is an error: stop and report.
 # 1. Find the previous release and the conventions
 
 ```bash
-gh release list --limit 20
+gh release list --limit 20 --json tagName,isDraft,isPrerelease,isLatest,publishedAt
 git fetch --tags origin
 git tag --sort=-creatordate | head -20
 gh repo view --json defaultBranchRef --jq .defaultBranchRef.name
@@ -48,9 +48,12 @@ Determine:
 
 - the base branch (the default branch unless the repository releases from another
   branch — CLAUDE.md, CONTRIBUTING.md, or the tags' history says so)
-- the previous release: the newest non-draft, non-prerelease release; if there is none,
-  the newest tag; if there is neither, this is the first release and the range starts at
-  the root commit
+- the previous release: the newest entry with `isDraft` and `isPrerelease` both false
+  (`isLatest` when GitHub marks one); if there is none, the newest tag; if there is
+  neither, this is the first release and the range starts at the root commit
+- when `--tag` was given: that the tag does not exist yet (`git tag -l <tag>` empty and
+  `gh release view <tag>` failing). If it exists, stop and report now, before doing any
+  of the work below; do not move or delete a tag
 - the tag convention: `v1.2.3` or `1.2.3`, and any prefix or suffix the existing tags use
 - whether `CHANGELOG.md` (or `CHANGES.md`, `HISTORY.md`) exists and its format
 - how existing release notes are written (`gh release view <tag>`): language, headings,
@@ -63,15 +66,23 @@ otherwise.
 # 2. Collect what landed
 
 ```bash
-git log <previous-tag>..origin/<base> --no-merges --format='%H%x09%s%x09%b'
-gh pr list --state merged --base <base> --limit 200 \
+gh pr list --state merged --base <base> --limit 400 \
   --json number,title,mergedAt,mergeCommit,labels,body,url
+git log <previous-tag>..origin/<base> --format='%H%x09%P%x09%s%x09%b'
 ```
 
-Keep the Pull Requests whose `mergedAt` is after the previous release (compare with
-`gh release view <previous-tag> --json publishedAt`, or the tag's commit date). Match
-commits to Pull Requests by `mergeCommit` and by `(#N)` in the subject; a commit with
-no Pull Request is listed on its own.
+The merged Pull Requests are the primary list. Keep those whose `mergedAt` is after the
+previous release (compare with `gh release view <previous-tag> --json publishedAt`, or
+the tag's commit date). If `gh pr list` returned as many entries as `--limit`, the list
+may be truncated (it is sorted by creation, not by merge date): stop and report rather
+than release from an incomplete list.
+
+Then walk the `git log` range — merge commits included, since a repository that merges
+with merge commits has the `(#N)` on the merge commit itself — and match each commit to
+a Pull Request by `mergeCommit.oid`, by `(#N)` in the subject, or by being reachable
+only through a matched merge commit (a second parent's history). Only a commit that
+matches no Pull Request at all is listed on its own; the individual commits inside a
+merged Pull Request are not separate entries.
 
 For each entry, determine the type from, in order:
 
@@ -159,8 +170,9 @@ Add `--draft` when requested. Use `--title` in the repository's convention when
 existing releases title differently from the tag. Do not pass `--generate-notes`; the
 notes are the ones written in step 3.
 
-If the tag already exists (`git tag -l <tag>` or `gh release view <tag>` succeeds), stop
-and report before creating anything; do not move or delete a tag.
+Check once more that the tag does not exist (`git tag -l <tag>` empty, `gh release view
+<tag>` failing) — the proposed tag was not known in step 1 — and stop and report if it
+does; do not move or delete a tag.
 
 If `gh release create` fails, report the error verbatim and stop. Do not retry with a
 different tag to get past it.

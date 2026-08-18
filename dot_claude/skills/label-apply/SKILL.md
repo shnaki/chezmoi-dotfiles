@@ -14,8 +14,8 @@ The rules for choosing labels live in `~/.claude/skills/label-apply/labeling-rul
 Read that file first and follow it; do not paraphrase or extend it here.
 
 All GitHub operations go through the GitHub CLI (`gh`). Do not use another GitHub
-client. If `gh` is unavailable or not authenticated, stop and report instead of falling
-back.
+client. Before the first `gh` call, run `gh auth status`; if `gh` is unavailable or not
+authenticated, stop and report instead of falling back.
 
 # Core rules
 

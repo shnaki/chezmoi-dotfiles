@@ -346,7 +346,7 @@ if [ -n "$BASE" ]; then
         # branches cut from an unpushed local base do not look like unpublished work.
         _ahead=$(git -C "$ROOT" rev-list --count "$_br" --not "$BASE" $LOCAL_BASE 2>/dev/null || printf 0)
         _is_merged=0
-        printf '%s\n' "$_merged_list" | grep -qx -- "$_br" && _is_merged=1
+        printf '%s\n' "$_merged_list" | grep -Fqx -- "$_br" && _is_merged=1
         _is_gone=0
         case "$_track" in *gone*) _is_gone=1 ;; esac
         printf '%s\t%s\t%s\t%s\t%s\n' "$_br" "$_ahead" "$_behind" "$_is_merged" "$_is_gone"
@@ -363,13 +363,22 @@ state_header() {  # state_header FILE KEY -> value of "- KEY: value"
 
 OTHER_STATES=""
 if [ -d "$STATE_DIR" ]; then
-    for _f in $(ls -1r "$STATE_DIR"/*.md 2>/dev/null); do
+    # Newest first: the file names end in <YYYYMMDD-HHMM>, so a reverse sort of the
+    # names is a reverse sort by start time. Names go through a file so that a path
+    # with spaces survives.
+    for _f in "$STATE_DIR"/*.md; do
+        [ -f "$_f" ] && printf '%s\n' "$_f"
+    done | sort -r > "$TMP/state_files"
+    while IFS= read -r _f; do
         [ -f "$_f" ] || continue
         if grep -Eq '^\**DONE\**([[:space:]]|$)' "$_f"; then
             continue
         fi
         _fname=${_f##*/}
         _repo=$(state_header "$_f" repository)
+        # Ours when the file name carries this repository's name (and the header does
+        # not contradict it), or when the header names this repository outright — the
+        # latter covers a clone whose directory name differs from the GitHub name.
         _mine=0
         case "$_fname" in
             "$REPO_NAME"-*) _mine=1 ;;
@@ -377,12 +386,17 @@ if [ -d "$STATE_DIR" ]; then
         if [ "$_mine" -eq 1 ] && [ -n "$_repo" ] && [ -n "$NWO" ] && [ "$_repo" != "$NWO" ]; then
             _mine=0
         fi
+        if [ "$_mine" -eq 0 ] && [ -n "$_repo" ] && [ -n "$NWO" ] && [ "$_repo" = "$NWO" ]; then
+            _mine=1
+        fi
         if [ "$_mine" -eq 0 ]; then
             OTHER_STATES="$OTHER_STATES $_fname"
             continue
         fi
-        _stamp=${_fname#"$REPO_NAME"-}
-        _stamp=${_stamp%.md}
+        # The stamp is the trailing <YYYYMMDD-HHMM>; fall back to the whole name for a
+        # file that does not follow the template's naming.
+        _stamp=$(printf '%s' "$_fname" | sed -n 's/.*-\([0-9]\{8\}-[0-9]\{4\}\)\.md$/\1/p')
+        [ -n "$_stamp" ] || _stamp=${_fname%.md}
         _started=$(state_header "$_f" started)
         _options=$(state_header "$_f" options)
         _issues=$(state_header "$_f" "requested issues" | grep -o '[0-9][0-9]*' | tr '\n' ' ' | sed 's/ $//')
@@ -390,7 +404,7 @@ if [ -d "$STATE_DIR" ]; then
         grep -E '^\| *#?[0-9]+ *\|' "$_f" | tr -d '\r' | while IFS= read -r _line; do
             printf '%s\t%s\n' "$_fname" "$_line"
         done >> "$SROWS"
-    done
+    done < "$TMP/state_files"
 fi
 
 if [ -n "$OTHER_STATES" ]; then
@@ -402,10 +416,14 @@ if [ "$_nstates" -gt 1 ]; then
 fi
 
 # Merged PRs are only needed to tell whether a state-file Issue is actually finished.
+MERGED_LIMIT=100
 if [ "$_nstates" -gt 0 ] && [ "$GH_STATE" = ok ]; then
-    _out=$(cd "$ROOT" && gh pr list --state merged --limit 100 --json number,headRefName,closingIssuesReferences \
+    _out=$(cd "$ROOT" && gh pr list --state merged --limit "$MERGED_LIMIT" --json number,headRefName,closingIssuesReferences \
         --jq '.[] | [.number, .headRefName, ((.closingIssuesReferences // []) | map(.number | tostring) | join(",") | if . == "" then "-" else . end)] | @tsv' 2>/dev/null) || _out=""
     printf '%s\n' "$_out" | tr -d '\r' | grep -v '^$' > "$MERGED" || true
+    if [ "$(wc -l < "$MERGED" | tr -d " ")" -ge "$MERGED_LIMIT" ]; then
+        note "merged PR list capped at $MERGED_LIMIT; an older merged PR may be missed and its Issue shown as unfinished"
+    fi
 fi
 
 # --- lookups -----------------------------------------------------------------
@@ -438,9 +456,9 @@ merged_pr_for_issue() {
 }
 
 claim_branch() { printf '%s\n' "$1" >> "$CLAIMED_BR"; }
-branch_claimed() { grep -qx -- "$1" "$CLAIMED_BR"; }
+branch_claimed() { grep -Fqx -- "$1" "$CLAIMED_BR"; }
 claim_issue() { [ -n "$1" ] && [ "$1" != "-" ] && printf '%s\n' "$1" >> "$CLAIMED_ISSUE" || true; }
-issue_claimed() { grep -qx -- "$1" "$CLAIMED_ISSUE"; }
+issue_claimed() { grep -Fqx -- "$1" "$CLAIMED_ISSUE"; }
 
 # --- decision ----------------------------------------------------------------
 

@@ -132,6 +132,32 @@ first_line() {
     printf '%s\n' "$1" | grep -v '^[[:space:]]*$' | head -n 1
 }
 
+# recently_touched WORKTREE REPO_ROOT -> success when the worktree directory itself, or
+# HEAD / the HEAD reflog in its git admin dir, changed within RECENT_MINUTES. An agent
+# editing deep inside src/ never bumps the top directory's mtime, so the admin dir is
+# consulted too (same rule as work-status.sh). The index is deliberately not consulted:
+# any `git status` rewrites it, so it would report every worktree as recent.
+recently_touched() {
+    if [ -n "$(find "$(dirname "$1")" -maxdepth 1 -name "$(basename "$1")" -mmin "-$RECENT_MINUTES" 2>/dev/null)" ]; then
+        return 0
+    fi
+    _gd=$(git -C "$1" rev-parse --git-dir 2>/dev/null || true)
+    case "$_gd" in
+        "") return 1 ;;
+        /*|[A-Za-z]:*) ;;
+        *) _gd="$1/$_gd" ;;
+    esac
+    [ -n "$(find "$_gd" "$_gd/logs" -maxdepth 1 -name HEAD -mmin "-$RECENT_MINUTES" 2>/dev/null)" ]
+}
+
+# Whether `gh` can answer questions about merged PRs. Decided once so that a branch
+# whose upstream is gone is reported as "gh could not confirm" rather than "no merged
+# PR found" when gh is missing, unauthenticated, or offline.
+GH_OK=0
+if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    GH_OK=1
+fi
+
 # Delete a directory, retrying once after a pause. On Windows a sharing violation from
 # an antivirus scan, the search indexer, or a file watcher is usually gone in seconds;
 # a directory a process holds as its cwd is not, and the second attempt fails the same
@@ -218,7 +244,7 @@ sweep_worktrees() {
         esac
 
         _is_registered=0
-        if printf '%s\n' "$_registered" | grep -qx -- "$_name"; then
+        if printf '%s\n' "$_registered" | grep -Fqx -- "$_name"; then
             _is_registered=1
         fi
 
@@ -248,8 +274,7 @@ sweep_worktrees() {
 
         # A stale lock proves the session that owned the worktree is gone, so the
         # "may still be running" guard does not apply to it.
-        if [ "$_stale_lock" -eq 0 ] && [ "$FORCE" -eq 0 ] &&
-           [ -n "$(find "$_wtdir" -maxdepth 1 -name "$_name" -mmin "-$RECENT_MINUTES" 2>/dev/null)" ]; then
+        if [ "$_stale_lock" -eq 0 ] && [ "$FORCE" -eq 0 ] && recently_touched "$_wt" "$_root"; then
             keep "$_name" "modified within $RECENT_MINUTES minutes, an agent may still be running"
             continue
         fi
@@ -274,7 +299,7 @@ sweep_worktrees() {
                 # why git gave up: the fallback hides an error worth knowing about.
                 log "    note    $_name (git worktree remove failed: $(first_line "$_err"))"
                 _err="$_err
-$(remove_dir "$_wt")"
+$(remove_dir "$_wt" || true)"
                 if [ -d "$_wt" ]; then
                     keep "$_name" "$(removal_failure "$_err")"
                     continue
@@ -330,10 +355,10 @@ sweep_branches() {
         case "$_br" in
             backup/*) continue ;;
         esac
-        printf '%s\n' "$_checked_out" | grep -qx -- "$_br" && continue
+        printf '%s\n' "$_checked_out" | grep -Fqx -- "$_br" && continue
 
         _is_merged=0
-        printf '%s\n' "$_merged" | grep -qx -- "$_br" && _is_merged=1
+        printf '%s\n' "$_merged" | grep -Fqx -- "$_br" && _is_merged=1
         case "$_track" in
             *gone*) _is_gone=1 ;;
             *) _is_gone=0 ;;
@@ -355,12 +380,15 @@ sweep_branches() {
 
         # Upstream is gone but the branch is not merged: most likely a squash-merged
         # PR. Only force-delete when GitHub confirms the PR was actually merged.
-        if ! command -v gh >/dev/null 2>&1; then
-            keep "$_br" "upstream gone but unmerged; gh unavailable to confirm"
+        if [ "$GH_OK" -eq 0 ]; then
+            keep "$_br" "upstream gone but unmerged; gh could not confirm (missing or unauthenticated)"
             continue
         fi
-        _pr=$(cd "$_root" && gh pr list --head "$_br" --state merged --limit 1 \
-                --json number --jq '.[0].number' 2>/dev/null || true)
+        if ! _pr=$(cd "$_root" && gh pr list --head "$_br" --state merged --limit 1 \
+                --json number --jq '.[0].number' 2>/dev/null); then
+            keep "$_br" "upstream gone but unmerged; gh could not confirm (query failed, offline?)"
+            continue
+        fi
         if [ -z "$_pr" ] || [ "$_pr" = "null" ]; then
             keep "$_br" "upstream gone but unmerged, and no merged PR found"
             continue
@@ -384,7 +412,10 @@ sweep_repo() {
     [ -n "$_root" ] || return 0
     # Do not descend into a repository through one of its own agent worktrees.
     case "$_root" in
-        */.claude/worktrees/*) return 0 ;;
+        */.claude/worktrees/*)
+            log "skipped $_root: inside an agent worktree; run from the main checkout"
+            return 0
+            ;;
     esac
 
     log "$_root"
@@ -410,7 +441,10 @@ printf '%s' "$PATHS" | while IFS= read -r _p; do
         continue
     fi
     if [ "$RECURSIVE" -eq 1 ]; then
-        find "$_p" -name .git -prune 2>/dev/null | sed 's|/\.git$||'
+        # Prune at .git (a repository root: report it, do not descend) and at
+        # node_modules (never a repository root, and enormous); print only the .git hits.
+        find "$_p" \( -name .git -o -name node_modules \) -prune -name .git -print 2>/dev/null |
+            sed 's|/\.git$||'
     else
         printf '%s\n' "$_p"
     fi

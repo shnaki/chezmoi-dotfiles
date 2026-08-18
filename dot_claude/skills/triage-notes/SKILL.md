@@ -8,7 +8,7 @@ disable-model-invocation: true
 Triage the notes provided in `$ARGUMENTS` and create appropriate GitHub Issues.
 
 If `$ARGUMENTS` contains `--dry-run`, remove that token and treat the rest as the
-notes. Under `--dry-run`, do everything up to and including the plan in step 9, print
+notes. Under `--dry-run`, do everything up to and including the plan in step 10, print
 the plan and every proposed Issue body, and stop without creating anything.
 
 This skill is responsible for investigation and issue design only.
@@ -16,7 +16,7 @@ This skill is responsible for investigation and issue design only.
 Do not implement any changes.
 Do not create branches or Pull Requests.
 
-All GitHub operations (reading, searching, and creating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. If `gh` is unavailable or not authenticated, stop and report instead of falling back.
+All GitHub operations (reading, searching, and creating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. Before the first `gh` call, run `gh auth status`; if `gh` is unavailable or not authenticated, stop and report instead of falling back.
 
 Write the Issue text in the language the repository's existing Issues use, and do not
 leave traces of the tools used to do the work in it.
@@ -186,41 +186,11 @@ Investigation notes are informational, not mandatory implementation instructions
 
 Avoid committing the implementation worker to a specific file, class, library, or architectural approach unless that constraint is genuinely required.
 
-# 9. Create the Issues
+# 9. Analyze dependencies
 
-Before creating anything, print the plan: one table for the run and, below it, the full
-proposed body of every Issue.
-
-```
-| # | title | labels | from note(s) | depends on |
-```
-
-Under `--dry-run`, stop here and say clearly that nothing was created.
-
-Otherwise, for each Issue, write the body to a temporary file outside the repository
-(never inside the working tree) and create it:
-
-```bash
-gh issue create --title "<title>" --body-file <file> --label "<labels>"
-```
-
-Label each Issue from the labels the repository already has, following
-`~/.claude/skills/label-apply/labeling-rules.md` (read it by path): one type label
-(bug / feature / docs / …) chosen from the repository's vocabulary, plus a status
-label only when the rules' evidence exists (for example `blocked` on an open
-dependency). Pass them with `--label`. Never create a label; if nothing in the
-repository fits, add none and say so in the report.
-
-Do not invent milestones, assignees, or projects unless repository conventions clearly require them.
-
-If a `gh` call fails, record the error verbatim and continue with the remaining Issues.
-Do not retry with a different body to get past a failure.
-
-After creation, record the Issue number and URL for each Issue.
-
-# 10. Analyze dependencies
-
-After all Issues are created, determine whether their implementations can safely run in parallel.
+Before creating anything, determine whether the planned Issues can safely be
+implemented in parallel, so the plan below can show it and `--dry-run` sees the same
+result as a real run.
 
 Consider both direct file overlap and semantic dependencies, including:
 
@@ -233,19 +203,49 @@ Consider both direct file overlap and semantic dependencies, including:
 - dependency files
 - producer/consumer relationships
 
-Classify the Issues into execution waves when useful.
-
-Example:
+Classify the Issues into execution waves when useful, referring to them by their row
+in the plan (they have no number yet):
 
 Wave 1:
-- #101
-- #102
-- #104
+- row 1
+- row 2
+- row 4
 
 Wave 2:
-- #103, depends on #101
+- row 3, depends on row 1
 
 Do not change the Issues merely to make parallel execution easier.
+
+# 10. Create the Issues
+
+Before creating anything, print the plan: one table for the run and, below it, the full
+proposed body of every Issue.
+
+```
+| row | title | labels | from note(s) | depends on |
+```
+
+Under `--dry-run`, stop here and say clearly that nothing was created.
+
+Otherwise, for each Issue, write the body to a temporary file outside the repository
+(never inside the working tree; `mktemp` or a file under `$TMPDIR`) and create it:
+
+```bash
+gh issue create --title "<title>" --body-file <file> --label "<labels>"
+```
+
+Label each Issue from the labels the repository already has, following
+`~/.claude/skills/label-apply/labeling-rules.md` (read it by path). Pass them with
+`--label`. Never create a label; if nothing in the repository fits, add none and say so
+in the report.
+
+Do not invent milestones, assignees, or projects unless repository conventions clearly require them.
+
+If a `gh` call fails, record the error verbatim and continue with the remaining Issues.
+Do not retry with a different body to get past a failure.
+
+After creation, record the Issue number and URL for each Issue, and restate the waves
+from step 9 with the real numbers (`Wave 2: #103, depends on #101`).
 
 # Completion
 
@@ -255,7 +255,7 @@ Return:
 - notes that were merged into another Issue
 - duplicates that were not created
 - any notes that were not actionable
-- proposed execution waves
+- proposed execution waves (by row under `--dry-run`, by Issue number otherwise)
 - important dependency or conflict risks
 - `gh` errors verbatim
 - under `--dry-run`, that nothing was created

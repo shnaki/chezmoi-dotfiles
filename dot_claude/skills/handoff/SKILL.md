@@ -33,8 +33,9 @@ Interpret `$ARGUMENTS`:
 - Do not name the tools or models used to do the work, in the document or in the patch.
 - Use paths relative to the repository root. Record the absolute root path once, in
   Repository state, and nowhere else.
-- All GitHub reads go through the GitHub CLI (`gh`). If `gh` is unavailable or not
-  authenticated, do not stop: record the affected fields as unverified and continue.
+- All GitHub reads go through the GitHub CLI (`gh`). Check `gh auth status` once before
+  the first read; if `gh` is unavailable or not authenticated, do not stop: record the
+  affected fields as unverified and continue.
 
 # 1. Collect the repository state
 
@@ -110,7 +111,8 @@ If `git status --short` shows tracked changes (staged or unstaged), also write:
 ~/.claude/handoff/<repo-name>-<YYYYMMDD-HHMM>.patch
 ```
 
-produced by `git diff HEAD --binary` (staged and unstaged together; `--binary` keeps
+(the same stem as the document, including any `-2` / `-3` collision suffix, so the pair
+is unambiguous) produced by `git diff HEAD --binary` (staged and unstaged together; `--binary` keeps
 changes to binary files applicable). Untracked files are not in the patch: list them by path in the document so the reader knows they exist only in
 this working tree. Skip the patch entirely if the diff contains a secret (see Core
 rules) and say so.
@@ -192,8 +194,9 @@ Do not paste the whole document into the response; the file is the deliverable.
 With `--resume`, locate the handoff file:
 
 - a path or file name was given: use it (a bare name resolves under `~/.claude/handoff/`)
-- nothing was given: pick the newest file in `~/.claude/handoff/` whose name starts with
-  the current repository directory name
+- nothing was given: pick the newest `.md` file in `~/.claude/handoff/` whose name
+  starts with the current repository directory name (never a `.patch`; the patch is
+  found from the document's stem)
 
 If no file is found, stop and report; do not invent a starting point.
 

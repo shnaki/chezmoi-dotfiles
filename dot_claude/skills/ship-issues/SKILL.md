@@ -44,7 +44,7 @@ Issues
 - Do not modify Issue requirements merely to make parallelization easier.
 - Workers never merge. Merging happens only in the orchestrator, only with `--merge`, and only through the `pr-land` workflow.
 - Keep detailed implementation work out of the orchestrator context.
-- All GitHub operations (reading, searching, and creating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. If `gh` is unavailable or not authenticated, stop and report instead of falling back.
+- All GitHub operations (reading, searching, and creating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. Before the first `gh` call, run `gh auth status`; if `gh` is unavailable or not authenticated, stop and report instead of falling back.
 
 # 1. Parse the requested Issues
 
@@ -55,12 +55,26 @@ Accept common forms such as:
 - `101 102 103`
 - `#101 #102 #103`
 - `101,102,103`
+- full Issue URLs (`https://github.com/<owner>/<repo>/issues/101`)
 
 Strip any leading `#` so a number is never interpolated as `##101`.
 
 Normalize the input into a unique Issue list.
 
 Do not process unrelated Issues that were not requested.
+
+Then establish the repository facts every later step relies on:
+
+- the base branch: `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`
+  (the repository's own instructions may name a different integration branch; use that
+  when they do). This is `<base-branch>` in the worker prompt and `- base:` in the state
+  file
+- the repository name for the state file: the part after `/` in
+  `gh repo view --json nameWithOwner --jq .nameWithOwner`; only when `gh` cannot answer,
+  the checkout's directory name
+- how the repository verifies changes and any toolchain constraint (CLAUDE.md,
+  `.claude/rules/`, `package.json` scripts, `Makefile`, CI configuration): these fill
+  `<verification-command>` and `<toolchain-note>` in the worker prompt
 
 ## Options
 
@@ -86,8 +100,8 @@ as such. It does not lift a required check; `pr-land` still stops on `BLOCKED`.
 ### `--dry-run`
 
 Stop after the execution plan (step 6). Write the state file with the plan and a `DONE`
-marker, print the Execution plan, Dependencies and conflicts, and Not implemented
-sections of the final response, and end. Start no worker, create no branch, change
+marker, print the Execution plan, Dependencies and conflicts, Not implemented, and
+State file sections of the final response, and end. Start no worker, create no branch, change
 nothing on GitHub. May be combined with `--merge`; the plan then also shows the merge
 order.
 
@@ -116,8 +130,10 @@ State file:
 ~/.claude/ship-issues/<repo-name>-<YYYYMMDD-HHMM>.md
 ```
 
-`<repo-name>` is the repository directory name, `<YYYYMMDD-HHMM>` the time the run
-started. Create the directory if it does not exist.
+`<repo-name>` is the GitHub repository name from step 1 (the directory name only when
+`gh` cannot answer), `<YYYYMMDD-HHMM>` the time the run started. `work-status.sh`
+matches the file to the repository by this prefix and by the `- repository:` header.
+Create the directory if it does not exist.
 
 Write the file from the template in `~/.claude/skills/ship-issues/state-file.md`. Read
 it and keep its shape exactly: the header lines, the table columns, and the `DONE`
@@ -136,15 +152,28 @@ report the exact resume command. Do not start another wave.
 ## Resuming
 
 With `--resume`, find the newest state file for this repository that has no `DONE`
-marker and read it.
+marker and read it. If there is none, stop and report, listing the finished (`DONE`)
+files found so the user can tell whether the run they meant already completed.
 
 Do not trust it as fact. Re-establish the real state before continuing:
 
-- for every Issue marked in progress or done, check for its Pull Request
-  (`gh pr list --search "<N>" --state all`) and whether it merged
+- for every Issue marked running or done, check for its Pull Request and whether it
+  merged. Look it up the way `backlog-review` does, from the strongest signal down:
+
+  ```bash
+  gh pr list --state all --limit 300 --json number,state,headRefName,closingIssuesReferences,body
+  ```
+
+  A Pull Request belongs to Issue N when its `closingIssuesReferences` names N, else
+  when its body says `Closes #N` (or `Fixes` / `Resolves`), else when its `headRefName`
+  starts with `N-`. Do not use `gh pr list --search "<N>"`: a full-text search for `31`
+  also matches `#310` and misses a Pull Request that only links the Issue through
+  `closingIssuesReferences`
 - check which worktrees and branches still exist (`git worktree list`, `git branch`)
-- check whether any recorded Agent task is still alive and can be resumed with a message
-  instead of restarted from scratch
+- only when resuming inside the same session that started the run: check whether a
+  recorded Agent task is still alive and can be continued with a message instead of
+  restarted. From another session (after a crash) those tasks are unreachable; start
+  fresh workers for the unfinished Issues
 
 Then continue from the first unfinished wave. Do not redo completed work, and do not
 start a second worker for an Issue that already has a Pull Request.
@@ -302,8 +331,11 @@ Start each worker with the Agent tool:
   `issue-pr` skill workflow for that Issue
 
 Build the prompt from the template in `~/.claude/skills/ship-issues/worker-prompt.md`.
-Read it and fill its slots from the analysis in steps 2-6. Do not improvise the fixed
-part of the prompt from run to run.
+Read it and fill its slots: the repository facts from step 1 (`<base-branch>`,
+`<verification-command>`, `<toolchain-note>`), the Issue and its wave from steps 2–6,
+and — when step 12 chose to stack this Issue on an unmerged dependency — that
+dependency's branch as `<base-branch>`. Do not improvise the fixed part of the prompt
+from run to run.
 
 A worker cannot invoke `issue-pr` as a skill — it is `disable-model-invocation: true`,
 so a subagent cannot select it. The template makes the worker read
@@ -311,24 +343,11 @@ so a subagent cannot select it. The template makes the worker read
 
 Workers never merge, regardless of `--merge`. Merging is step 10, in the orchestrator.
 
-Each worker must receive exactly one Issue number.
-
-Each worker must:
-
-- operate in an isolated branch/worktree
-- read the Issue independently
-- inspect the relevant implementation independently
-- follow repository-specific instructions
-- implement only its assigned Issue
-- run relevant verification
-- review its complete diff
-- commit the implementation
-- push its branch
-- create exactly one Pull Request
-- reference the Issue from the Pull Request
-- not merge the Pull Request
-
-The worker should follow the repository's `issue-pr` workflow when that skill is available.
+Each worker receives exactly one Issue number and works under the constraints listed
+in the template (isolated worktree and branch, only its Issue, verification, complete
+diff review, commit, push, exactly one Pull Request that references the Issue, no
+merge). The template is the single place those constraints live; do not restate a
+different list here or in the prompt.
 
 Do not ask one worker to handle multiple Issues.
 
@@ -362,6 +381,8 @@ For each Issue, record:
 
 - Issue number
 - worker status
+- the Agent task id and the worktree path the worker used (both go into the state file,
+  so `--resume` and `/work-status` can find them)
 - branch
 - Pull Request URL
 - implementation summary
@@ -426,7 +447,9 @@ If an Issue depends on another Issue whose Pull Request is not yet merged, choos
 Possible outcomes include:
 
 - defer the dependent Issue until the dependency is merged
-- explicitly base the dependent branch on the dependency branch
+- explicitly base the dependent branch on the dependency branch: fill `<base-branch>`
+  in that worker's prompt with the dependency's branch (not the default branch), so the
+  worker's base check and reset target the right ref, and say so in the Pull Request
 - report that manual sequencing is required
 
 Do not create a hidden stacked-branch relationship.
@@ -477,10 +500,12 @@ Before completing the orchestration, verify:
 Worker worktrees are not auto-removed once the worker has committed, so every run of
 this skill leaves worktree directories and unused worktree branches behind.
 
-After all waves have finished, run the sweeper against the repository root:
+After all waves have finished, run the sweeper against the repository root (the first
+line of `git worktree list`; pass it explicitly, because the sweeper skips a run started
+from inside an agent worktree):
 
 ```
-sh ~/.claude/scripts/worktree-sweep.sh --force
+sh ~/.claude/scripts/worktree-sweep.sh --force <repo-root>
 ```
 
 `--force` is required here. By default the sweeper skips worktrees touched in the last
@@ -493,7 +518,7 @@ The sweeper only removes what is unambiguously safe. Branches with an open Pull
 Request are never touched: their upstream is alive and they are not merged into the
 base branch, so they do not match any deletion rule.
 
-If the script is not present, skip this step silently and note it in the final report.
+If the script is not present, skip this step and note it in the final report.
 
 Report anything the sweeper kept, together with its reason. Do not delete those
 items manually. In particular:
@@ -508,13 +533,18 @@ Then mark the state file `DONE` (a line beginning with `DONE`, as in the templat
 
 # Completion status
 
-Use one of the following statuses for each requested Issue:
+Use one of the following statuses for each requested Issue. They are derived from the
+state file's `class` and `status` columns: an Issue whose class is not `ready` reports
+its class (already implemented / in progress / blocked / duplicate / obsolete / needs
+investigation) and carries `status: skipped` in the file; a ready Issue reports how far
+its worker got.
 
 - PR created
 - PR merged (`--merge` only)
 - PR created, not merged (`--merge` only; include the reason `pr-land` stopped)
 - already implemented
 - in progress (name the open Pull Request)
+- needs investigation (`/issue-refine <N>` suggested)
 - blocked
 - deferred
 - duplicate

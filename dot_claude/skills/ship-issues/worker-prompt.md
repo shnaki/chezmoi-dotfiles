@@ -4,10 +4,16 @@ Template for the Agent tool call that `ship-issues` makes for one Issue
 (`SKILL.md` step 7). One call per Issue, `isolation: "worktree"`,
 `subagent_type: "general-purpose"`.
 
-Fill every `<...>` slot from the analysis in steps 2-6. Drop a slot's line entirely
-when it does not apply — do not pass the placeholder through.
+Fill every `<...>` slot: `<owner/repo>`, `<base-branch>`, `<verification-command>`, and
+`<toolchain-note>` come from the repository facts gathered in step 1; `<N>`,
+`<other-worker-files>`, and `<issue-specific-note>` from steps 2–6. `<base-branch>` is
+the default branch unless step 12 stacked this Issue on an unmerged dependency, in
+which case it is that dependency's branch. Drop a slot's line entirely when it does
+not apply — do not pass the placeholder through.
 
-Write the prompt in Japanese, matching the user-facing language rule.
+Write the prompt in Japanese, matching the user-facing language rule. (The
+"author skills in English" rule covers SKILL.md and agent definitions, not this
+runtime prompt.)
 
 The worker cannot invoke `issue-pr` as a skill: it is `disable-model-invocation: true`,
 so a subagent cannot select it. Make the worker read the file by path instead.
@@ -23,10 +29,10 @@ so a subagent cannot select it. Make the worker read the file by path instead.
 
 必ず守ること:
 
-1. 着手前に `git fetch origin` し、`git merge-base --is-ancestor origin/<default-branch> HEAD`
-   で worktree の HEAD が最新の `origin/<default-branch>` を含むか確認する。含んでおらず、
-   未コミットの変更が無ければ `git reset --hard origin/<default-branch>` する。
-   確認結果を最終報告に書く。
+1. 着手前に `git fetch origin` し、`git merge-base --is-ancestor origin/<base-branch> HEAD`
+   で worktree の HEAD が最新の `origin/<base-branch>` を含むか確認する。含んでおらず、
+   未コミットの変更が無ければ `git reset --hard origin/<base-branch>` する。
+   確認結果を最終報告に書く。HEAD が detached なら止めて報告する。
 2. worktree が最初にチェックアウトしているブランチにはコミットしない。
    `<N>-<slug>` という専用ブランチを切って作業する。
 3. 対象は Issue #`<N>` のみ（`gh issue view <N> -R <owner/repo> --comments`）。

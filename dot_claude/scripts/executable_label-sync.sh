@@ -255,10 +255,17 @@ while IFS="$(printf '\t')" read -r name color desc; do
         echo "$kind" >> "$TMP/counts"
         continue
     fi
-    # --limit 1 keeps this cheap; --jq length gives 0 or 1.
-    n_issues=$(gh issue list -R "$REPO" --label "$name" --state all --limit 1 --json number --jq length | tr -d '\r')
-    n_prs=$(gh pr list -R "$REPO" --label "$name" --state all --limit 1 --json number --jq length | tr -d '\r')
-    if [ "${n_issues:-0}" -eq 0 ] && [ "${n_prs:-0}" -eq 0 ]; then
+    # --limit 1 keeps this cheap; --jq length gives 0 or 1. A failed query (offline,
+    # rate limit) must not end the script under set -e, and must not read as "unused":
+    # an unknown usage count keeps the label.
+    n_issues=$(gh issue list -R "$REPO" --label "$name" --state all --limit 1 --json number --jq length 2>/dev/null | tr -d '\r') || n_issues=""
+    n_prs=$(gh pr list -R "$REPO" --label "$name" --state all --limit 1 --json number --jq length 2>/dev/null | tr -d '\r') || n_prs=""
+    if [ -z "$n_issues" ] || [ -z "$n_prs" ]; then
+        log "    retain   $name ($kind, usage unknown: gh query failed)$note"
+        echo "$kind" >> "$TMP/counts"
+        continue
+    fi
+    if [ "$n_issues" -eq 0 ] && [ "$n_prs" -eq 0 ]; then
         log "    ${PREFIX}delete   $name (unmanaged, unused)"
         if gh_write label delete "$name" -R "$REPO" --yes; then
             echo delete >> "$TMP/counts"
@@ -267,7 +274,7 @@ while IFS="$(printf '\t')" read -r name color desc; do
             echo fail >> "$TMP/counts"
         fi
     else
-        log "    keep     $name ($kind, in use)$note"
+        log "    retain   $name ($kind, in use)$note"
         echo "$kind" >> "$TMP/counts"
     fi
 done < "$EXISTING"
