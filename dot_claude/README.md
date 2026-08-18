@@ -362,12 +362,17 @@ sh dot_claude/scripts/executable_skill-lint.sh dot_claude/skills
 検査項目:
 
 - `SKILL.md` の frontmatter が `---` で始まり、`name` がディレクトリ名と一致し、`description`
-  があり、`cm` 以外は `disable-model-invocation: true` を持つ
+  があり、`cm` 以外は `disable-model-invocation: true` を持ち `user-invocable: true` を持たない
 - `argument-hint` の `--flag` / `-X` が README 表の「引数」列にすべて載っていて、逆も成り立つ
-- スキル配下の `*.md` にある `~/.claude/skills/...` / `~/.claude/scripts/...` が実在する
-- `SKILL.md` の本文（frontmatter 以降）に日本語が無い（`worker-prompt.md` などの付随ファイルは
-  対象外。日本語で書くものがあるため）
-- README の表にすべてのスキルの行があり、ディレクトリの無い行が無く、`## <name>` 節がある
+  （`argument-hint` が無いのに表にオプションがある場合も報告）。本文が `- \`--flag\` …` の箇条書きか
+  `### \`--flag\`` の見出しで説明しているオプションは `argument-hint` にもある
+- スキル配下の `*.md` と `skills/README.md` にある `~/.claude/skills/...` / `~/.claude/scripts/...`
+  が実在する。`skills/README.md` の `](#anchor)` / `](../README.md#anchor)` が見出しに解決する
+- `SKILL.md` の本文（frontmatter 以降）に日本語が無い（かな・漢字に加えて `、。「」` と全角英数も
+  見る。`worker-prompt.md` などの付随ファイルは対象外。日本語で書くものがあるため）
+- README の表にすべてのスキルの行があり、ディレクトリの無い行が無く、`## <name>` 節があり、
+  「`cm` 以外の N は」の N がディレクトリ数と合う
+- `scripts/*.sh` はどれかの `*.md` から参照されている（孤児スクリプトを検出）
 
 違反は `file:line: message` で出し、1 件でもあれば終了コード 1 です。
 

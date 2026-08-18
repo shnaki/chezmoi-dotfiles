@@ -10,20 +10,29 @@
 #
 # Checks, per skill directory <skills>/<name>/SKILL.md:
 #   frontmatter   starts with `---`, has `name: <name>` and `description:`; every skill
-#                 except `cm` has `disable-model-invocation: true`
+#                 except `cm` has `disable-model-invocation: true` and no
+#                 `user-invocable: true`
 #   options       every `--flag` / `-X` in argument-hint appears in the README table row
-#                 for that skill, and vice versa
+#                 for that skill, and vice versa (a missing argument-hint with options in
+#                 the row is reported too); every option the body documents as a bullet
+#                 (`- `--flag` ...`) or a heading (`### `--flag``) is in argument-hint
 #   references    every `~/.claude/skills/...` and `~/.claude/scripts/...` path in any
 #                 *.md under the skill resolves to an existing file or directory
 #   language      the SKILL.md body (after the frontmatter) contains no Japanese
-#                 characters; other files in the skill directory are not checked
+#                 characters (kana, kanji, CJK punctuation, full-width forms); other
+#                 files in the skill directory are not checked
 # And for the README next to the skills:
 #   table         one row per skill directory, no row without a directory, and one
-#                 `## <name>` section per skill
+#                 `## <name>` section per skill; the "`cm` 以外の N は" count matches
+#   references    its `~/.claude/...` paths resolve, and every `](#anchor)` /
+#                 `](<relative>.md#anchor)` link points at a heading that exists
+# And for the scripts directory next to the skills (`../scripts`):
+#   scripts       every *.sh there is referenced from at least one *.md under the skills
 #
 # The skills directory may be the deployed one (~/.claude/skills) or the chezmoi source
 # (.../dot_claude/skills). In the source layout, `~/.claude/X` resolves under dot_claude/
-# and scripts carry the `executable_` prefix; the script handles both.
+# and scripts carry the `executable_` prefix; the script handles both. The README is
+# not deployed, so in practice this runs against the source layout.
 #
 # Usage: skill-lint.sh [SKILLS_DIR]      default: ~/.claude/skills
 # Exit: 0 when clean, 1 when at least one problem was reported, 2 on usage error.
@@ -35,7 +44,8 @@ usage() {
 Usage: skill-lint.sh [SKILLS_DIR]
 
 Checks SKILL.md frontmatter, argument-hint vs README table, ~/.claude/... path
-references, English-only SKILL.md bodies, and README table coverage.
+references, English-only SKILL.md bodies, README table coverage and anchors, and
+that every script next to the skills is referenced.
 SKILLS_DIR defaults to ~/.claude/skills.
 EOF
 }
@@ -54,6 +64,7 @@ case "$SKILLS" in
     */dot_claude/skills) CLAUDE_HOME=${SKILLS%/skills}; SOURCE_LAYOUT=1 ;;
     *)                   CLAUDE_HOME=${SKILLS%/skills}; SOURCE_LAYOUT=0 ;;
 esac
+SCRIPTS_DIR="$CLAUDE_HOME/scripts"
 
 PROBLEMS=0
 problem() {  # problem FILE LINE MESSAGE
@@ -73,15 +84,66 @@ resolve_ref() {
     return 1
 }
 
-# Japanese in the C locale: hiragana/katakana lead byte 0xE3 with 0x81-0x83, kanji lead
-# bytes 0xE4-0xE9. Built with printf so the script itself stays ASCII.
-JA_PATTERN=$(printf '\343[\201-\203]|[\344-\351]')
+# check_refs FILE -> reports every `~/.claude/(skills|scripts)/...` reference in FILE
+# that does not resolve.
+check_refs() {
+    grep -n -o -E '~/\.claude/(skills|scripts)/[A-Za-z0-9_./-]*' "$1" 2>/dev/null | tr -d '\r' \
+        | sed 's/[.]*$//' | sort -u | while IFS=: read -r ln ref; do
+            resolve_ref "$ref" >/dev/null || printf '%s:%s: reference does not resolve: %s\n' "$1" "$ln" "$ref"
+        done > "$TABLE.refs" || true
+    if [ -s "$TABLE.refs" ]; then
+        cat "$TABLE.refs"
+        PROBLEMS=$((PROBLEMS + $(wc -l < "$TABLE.refs")))
+    fi
+    rm -f "$TABLE.refs"
+}
 
-# README table: `| [`name`](#name) | ... | args | ... |` -> name<TAB>args
-TABLE=$(mktemp); trap 'rm -f "$TABLE"' EXIT
+# slug TEXT -> the GitHub-style anchor for a heading: ASCII lowercased, ASCII and
+# common full-width punctuation removed, spaces turned into `-`. Backticks and the
+# like are removed rather than replaced, so "settings.json はキー単位で" becomes
+# "settingsjson-はキー単位で", as GitHub renders it.
+slug() {
+    printf '%s' "$1" | tr 'A-Z' 'a-z' \
+        | sed 's/[`.,:;!?()\[\]{}"'"'"'\/\\|<>@#$%^&*+=~]//g; s/（//g; s/）//g; s/、//g; s/。//g; s/「//g; s/」//g; s/：//g; s/／//g' \
+        | tr ' ' '-'
+}
+
+# check_anchors FILE -> reports every `](#a)` and `](<rel>.md#a)` link in FILE whose
+# anchor is not a heading of the target file.
+check_anchors() {
+    grep -n -o -E '\]\(([A-Za-z0-9_./-]*\.md)?#[^)]+\)' "$1" 2>/dev/null | tr -d '\r' \
+        | sed 's/\](\(.*\))$/\1/' | while IFS=: read -r ln link; do
+            _target=${link%%#*}; _anchor=${link#*#}
+            if [ -z "$_target" ]; then _tf=$1; else _tf=$(dirname "$1")/$_target; fi
+            if [ ! -f "$_tf" ]; then
+                printf '%s:%s: link target does not exist: %s\n' "$1" "$ln" "$link"
+                continue
+            fi
+            _found=0
+            while IFS= read -r _h; do
+                [ "$(slug "$_h")" = "$_anchor" ] && { _found=1; break; }
+            done <<EOF
+$(grep -E '^#{1,6} ' "$_tf" | sed 's/^#* *//' | tr -d '\r')
+EOF
+            [ "$_found" -eq 1 ] || printf '%s:%s: anchor not found in %s: #%s\n' "$1" "$ln" "$_target" "$_anchor"
+        done > "$TABLE.anchors" || true
+    if [ -s "$TABLE.anchors" ]; then
+        cat "$TABLE.anchors"
+        PROBLEMS=$((PROBLEMS + $(wc -l < "$TABLE.anchors")))
+    fi
+    rm -f "$TABLE.anchors"
+}
+
+# Japanese in the C locale: CJK punctuation \343\200 (U+3000-303F), hiragana/katakana
+# \343\201-\203, kanji lead bytes \344-\351, full-width forms \357\274-\275. Built with
+# printf so the script itself stays ASCII.
+JA_PATTERN=$(printf '\343[\200-\203]|[\344-\351]|\357[\274-\275]')
+
+# README table: `| [`name`](#name) | ... | args | ... |` -> line<TAB>name<TAB>args
+TABLE=$(mktemp); trap 'rm -f "$TABLE" "$TABLE.refs" "$TABLE.anchors" "$TABLE.opts"' EXIT
 if [ -f "$README" ]; then
-    grep -E '^\| \[`[^`]+`\]\(#[^)]+\)' "$README" | tr -d '\r' \
-        | awk -F'|' '{ n = $2; sub(/^ *\[`/, "", n); sub(/`.*$/, "", n); a = $4; gsub(/^ +| +$/, "", a); print n "\t" a }' > "$TABLE"
+    grep -n -E '^\| \[`[^`]+`\]\(#[^)]+\)' "$README" | tr -d '\r' \
+        | awk -F'|' '{ ln = $1; sub(/:.*$/, "", ln); n = $2; sub(/^ *\[`/, "", n); sub(/`.*$/, "", n); a = $4; gsub(/^ +| +$/, "", a); print ln "\t" n "\t" a }' > "$TABLE"
 else
     problem "$README" 0 "README.md not found next to the skills"
 fi
@@ -91,8 +153,11 @@ option_tokens() {
     printf '%s\n' "$1" | tr ' []|/`,()' '\n\n\n\n\n\n\n\n\n' | grep -E '^--?[A-Za-z][A-Za-z0-9-]*$' | sort -u || true
 }
 
+NSKILLS=0
 for dir in "$SKILLS"/*/; do
     [ -d "$dir" ] || continue
+    dir=${dir%/}
+    NSKILLS=$((NSKILLS + 1))
     name=$(basename "$dir")
     skill="$dir/SKILL.md"
     if [ ! -f "$skill" ]; then
@@ -105,10 +170,9 @@ for dir in "$SKILLS"/*/; do
         problem "$skill" 1 "frontmatter must start with ---"
         continue
     fi
-    # Lines 2..(closing ---)
-    fm=$(sed -n '2,/^---$/p' "$skill" | tr -d '\r' | sed '$d')
     fm_end=$(awk 'NR > 1 && /^---\r?$/ { print NR; exit }' "$skill")
     [ -n "$fm_end" ] || { problem "$skill" 1 "frontmatter is not closed"; continue; }
+    fm=$(sed -n "2,$((fm_end - 1))p" "$skill" | tr -d '\r')
 
     fm_name=$(printf '%s\n' "$fm" | sed -n 's/^name: *//p' | head -n 1)
     [ "$fm_name" = "$name" ] || problem "$skill" 2 "name is '${fm_name:-<missing>}', directory is '$name'"
@@ -116,19 +180,22 @@ for dir in "$SKILLS"/*/; do
     if [ "$name" != cm ]; then
         printf '%s\n' "$fm" | grep -q '^disable-model-invocation: *true' \
             || problem "$skill" 2 "disable-model-invocation: true is missing (only cm may be model-invocable)"
+        printf '%s\n' "$fm" | grep -q '^user-invocable: *true' \
+            && problem "$skill" 2 "user-invocable: true is only for cm"
     fi
     hint=$(printf '%s\n' "$fm" | sed -n 's/^argument-hint: *//p' | head -n 1 | sed 's/^"\(.*\)"$/\1/')
+    hint_opts=$(option_tokens "$hint")
 
     # --- options vs README table -----------------------------------------------
-    row=$(awk -F'\t' -v n="$name" '$1 == n { print $2; exit }' "$TABLE")
-    if [ -z "$row" ] && [ -f "$README" ]; then
+    row_ln=$(awk -F'\t' -v n="$name" '$2 == n { print $1; exit }' "$TABLE")
+    row=$(awk -F'\t' -v n="$name" '$2 == n { print $3; exit }' "$TABLE")
+    if [ -z "$row_ln" ] && [ -f "$README" ]; then
         problem "$README" 0 "no table row for skill '$name'"
-    elif [ -n "$hint" ]; then
-        hint_opts=$(option_tokens "$hint")
+    elif [ -n "$row_ln" ]; then
         row_opts=$(option_tokens "$row")
         for o in $hint_opts; do
             printf '%s\n' "$row_opts" | grep -qx -- "$o" \
-                || problem "$README" 0 "table row '$name': option '$o' from argument-hint is missing"
+                || problem "$README" "$row_ln" "table row '$name': option '$o' from argument-hint is missing"
         done
         for o in $row_opts; do
             printf '%s\n' "$hint_opts" | grep -qx -- "$o" \
@@ -139,18 +206,24 @@ for dir in "$SKILLS"/*/; do
         problem "$README" 0 "no '## $name' section for skill '$name'"
     fi
 
+    # --- options documented in the body vs argument-hint ---------------------------
+    # A bullet or heading whose first token is a backticked option is how the skills
+    # document their own options (`- `--dry-run` — ...`, `### `--merge``). gh/git flags
+    # appear inside prose and code blocks, never in that position.
+    tail -n +"$((fm_end + 1))" "$skill" | tr -d '\r' \
+        | grep -n -E '^(- |### )`--?[A-Za-z][A-Za-z0-9-]*[` ]' \
+        | sed 's/^\([0-9]*\):\(- \|### \)`\(--\{0,1\}[A-Za-z][A-Za-z0-9-]*\).*/\1\t\3/' \
+        | sort -u -k2,2 > "$TABLE.opts" || true
+    while IFS="$(printf '\t')" read -r oln o; do
+        [ -n "$o" ] || continue
+        printf '%s\n' "$hint_opts" | grep -qx -- "$o" \
+            || problem "$skill" "$((oln + fm_end))" "body documents option '$o' but argument-hint does not list it"
+    done < "$TABLE.opts"
+
     # --- ~/.claude/... references ---------------------------------------------
-    for md in "$dir"*.md; do
+    for md in "$dir"/*.md; do
         [ -f "$md" ] || continue
-        grep -n -o -E '~/\.claude/(skills|scripts)/[A-Za-z0-9_./-]*' "$md" 2>/dev/null | tr -d '\r' \
-            | sed 's/[.]*$//' | sort -u | while IFS=: read -r ln ref; do
-                resolve_ref "$ref" >/dev/null || printf '%s:%s: reference does not resolve: %s\n' "$md" "$ln" "$ref"
-            done > "$TABLE.refs" || true
-        if [ -s "$TABLE.refs" ]; then
-            cat "$TABLE.refs"
-            PROBLEMS=$((PROBLEMS + $(wc -l < "$TABLE.refs")))
-        fi
-        rm -f "$TABLE.refs"
+        check_refs "$md"
     done
 
     # --- language ------------------------------------------------------------------
@@ -163,16 +236,38 @@ for dir in "$SKILLS"/*/; do
     fi
 done
 
-# --- README rows without a directory ----------------------------------------------
+# --- README: rows without a directory, count sentence, references, anchors ------------
 if [ -f "$README" ]; then
-    while IFS="$(printf '\t')" read -r n _; do
+    while IFS="$(printf '\t')" read -r ln n _; do
         [ -n "$n" ] || continue
-        [ -d "$SKILLS/$n" ] || problem "$README" 0 "table row '$n' has no skill directory"
+        [ -d "$SKILLS/$n" ] || problem "$README" "$ln" "table row '$n' has no skill directory"
     done < "$TABLE"
+
+    count_ln=$(grep -n -E '`cm` 以外の [0-9]+ は' "$README" | head -n 1 | cut -d: -f1 || true)
+    if [ -n "$count_ln" ]; then
+        count=$(sed -n "${count_ln}p" "$README" | LC_ALL=C grep -o -E '[0-9]+ ' | head -n 1 | tr -d ' ')
+        expected=$((NSKILLS - 1))
+        [ "$count" = "$expected" ] \
+            || problem "$README" "$count_ln" "says '\`cm\` 以外の $count' but there are $NSKILLS skill directories ($expected besides cm)"
+    fi
+
+    check_refs "$README"
+    check_anchors "$README"
+fi
+
+# --- scripts nobody references ----------------------------------------------------
+if [ -d "$SCRIPTS_DIR" ]; then
+    for s in "$SCRIPTS_DIR"/*.sh; do
+        [ -f "$s" ] || continue
+        sname=$(basename "$s"); sname=${sname#executable_}
+        if ! grep -rqs -- "scripts/$sname" "$SKILLS" --include='*.md'; then
+            problem "$s" 0 "script is not referenced from any *.md under $SKILLS"
+        fi
+    done
 fi
 
 if [ "$PROBLEMS" -eq 0 ]; then
-    echo "ok: $(ls -d "$SKILLS"/*/ | wc -l | tr -d ' ') skills checked"
+    echo "ok: $NSKILLS skills checked"
     exit 0
 fi
 echo "$PROBLEMS problem(s)" >&2
