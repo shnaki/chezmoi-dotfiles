@@ -1,6 +1,6 @@
 ---
 name: backlog-review
-description: "Survey a repository's open GitHub Issues and sort them into ready / blocked / duplicate / already implemented / obsolete / needs-info / needs investigation. Read-only: reports and suggests next commands, changes nothing on GitHub."
+description: "Survey a repository's open GitHub Issues and sort them into ready / in progress / blocked / duplicate / already implemented / obsolete / needs-info / needs investigation. Read-only: reports and suggests next commands, changes nothing on GitHub."
 argument-hint: "[--limit N] [--label <name>] [--milestone <name>] [--since <YYYY-MM-DD>] [-R owner/repo] [numbers-or-urls...]"
 disable-model-invocation: true
 ---
@@ -103,25 +103,27 @@ Match Pull Requests to Issues by, in order of strength:
 Apply the classes in this order; the first one whose evidence holds wins.
 
 1. `already implemented` — a merged Pull Request references the Issue (step 2, strengths
-   1–3) and the Issue was left open; or an open Pull Request references it (note
-   `open PR #M`, plus `draft` when it is); or the code already satisfies the request.
-2. `duplicate` — another **open** Issue tracks the same request. Name the survivor:
+   1–3) and the Issue was left open; or the code already satisfies the request.
+2. `in progress` — an **open** Pull Request references the Issue (step 2, strengths
+   1–3). Evidence `open PR #M`, plus `(draft)` when it is one. This is not done work:
+   it is neither closable nor free for `ship-issues`.
+3. `duplicate` — another **open** Issue tracks the same request. Name the survivor:
    by default the older one, or the one with the discussion and links, or the one a
    maintainer comment points to. The Issue being classified is the duplicate side.
-3. `obsolete` — the code, feature, or dependency it targets no longer exists; the
+4. `obsolete` — the code, feature, or dependency it targets no longer exists; the
    request was withdrawn in the thread; or a merged change made it moot without a
    closing reference.
-4. `blocked` — per the rules file: the body, a comment, or a blocked-category label
+5. `blocked` — per the rules file: the body, a comment, or a blocked-category label
    names a dependency (Issue, Pull Request, or external change) that is still open.
    When the named dependency is closed or merged, do not classify as blocked; classify
    by the remaining evidence and add `blocked label is stale` to the note.
-5. `needs-info` — per the rules file: the last maintainer comment asks the reporter for
+6. `needs-info` — per the rules file: the last maintainer comment asks the reporter for
    something and no reply followed; or it is a question with no actionable request; or
    the body has no reproduction or expected behavior and the code cannot supply it.
-6. `needs investigation` — none of the above can be decided from the evidence at hand.
+7. `needs investigation` — none of the above can be decided from the evidence at hand.
    The note names what would decide it (`needs a repro on current main`, `unclear
    whether #40 covers it`, …).
-7. `ready` — none of the above applies, the expected outcome is clear from the Issue,
+8. `ready` — none of the above applies, the expected outcome is clear from the Issue,
    and there is no open dependency and no Pull Request.
 
 Among ready Issues, when one clearly must land before another (the body says so, or
@@ -158,8 +160,11 @@ skill:
 - `/ship-issues <numbers>` with the ready Issues in the order the notes suggest
 - `/issue-refine <numbers>` with the needs investigation Issues
 - `/label-apply <numbers>` with the Issues in the mismatch list
+- one `/pr-review <M>` (or `/pr-land <M>` when the Pull Request is approved with green
+  checks) line per in progress Issue
 - one `gh issue close <N> --reason <completed|"not planned"> --comment "<why, naming
   the PR or the surviving Issue>"` line per already implemented, duplicate, and
-  obsolete Issue, so the user can review and paste them
+  obsolete Issue, so the user can review and paste them. Never for in progress: its
+  Pull Request closes it when it merges
 
 End with the sentence: `Nothing was changed on GitHub.`
