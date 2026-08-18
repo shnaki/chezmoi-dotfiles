@@ -6,6 +6,7 @@
 | --- | --- | --- | --- |
 | [`cm`](#cm) | Conventional Commits でコミットする | コミットメッセージまたは変更の説明 | `/cm`（モデルからの自動起動も可） |
 | [`triage-notes`](#triage-notes) | メモを調査して GitHub Issue を起票する | メモのファイルまたはテキスト | `/triage-notes` のみ |
+| [`issue-refine`](#issue-refine) | 既存 Issue を調査して実装可能な本文に書き換える | Issue 番号の並び + `--dry-run` / `--split`（任意） | `/issue-refine` のみ |
 | [`ship-issues`](#ship-issues) | 既存 Issue 群を並列ワーカーに割って PR 化する | Issue 番号の並び + `--merge` / `--resume`（任意） | `/ship-issues` のみ |
 | [`issue-pr`](#issue-pr) | Issue 1 件を PR 1 件として実装する | Issue 番号 + `--merge`（任意） | `/issue-pr` のみ |
 | [`pr-ready`](#pr-ready) | 現在ブランチの作業を diff 確認 → 検証 → コミット → PR にする | Issue 番号（任意） | `/pr-ready` のみ |
@@ -19,7 +20,7 @@
 | [`work-status`](#work-status) | 進行中の PR / worktree / ship-issues run を一覧し、次に叩くコマンドを出す（読むだけ） | `--no-fetch`（任意） | `/work-status` のみ |
 | [`backlog-review`](#backlog-review) | open Issue 群を調査して ready / blocked / duplicate 等に分類する（読むだけ） | `--limit` / `--label` / `--milestone` / `--since` / `-R` / 番号（任意） | `/backlog-review` のみ |
 
-`cm` 以外の 13 は `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
+`cm` 以外の 14 は `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
 起動しません。`cm` だけは `user-invocable: true` で、コミット時にモデルからも選ばれます。
 
 ## スキル間の関係
@@ -28,6 +29,7 @@
 
 ```
 メモ ──/triage-notes──> Issue 群
+粗い Issue ─/issue-refine─> 実装可能な Issue   （--split で子 Issue に分割起票）
 Issue 群 ─/ship-issues─> 依存分析 → ウェーブ → ワーカー → PR 群
 Issue ───/issue-pr───> PR                 （ship-issues のワーカーが踏襲する単位）
 ブランチ上の作業 ─/pr-ready─> PR          （Issue なしでも可。cm のコミット規約を内包）
@@ -50,10 +52,14 @@ PR ─/pr-review─> 指摘 ─/pr-fix─> 修正を push ─/pr-land─> マー
 
 open Issue 群 ─/backlog-review─> ready / blocked / duplicate … に分類（読むだけ）
                                  ──ready の番号──> /ship-issues、ラベルの食い違い──> /label-apply
+                                 ──needs investigation の番号──> /issue-refine
 ```
 
 - 起票だけしたいときは `/triage-notes`。既に Issue があるなら `/ship-issues` に
   番号を渡します。メモから PR まで一息に回すときだけ `/ship-notes` を使います。
+- 既にある Issue が粗くて実装に入れないときは `/issue-refine`。コードと突き合わせて
+  本文を実装可能な構成に書き換えます（実装はしない）。`ship-issues` / `backlog-review` が
+  needs investigation とした Issue の受け皿で、`--split` を付けたときだけ子 Issue を起票します。
 - ワーカーは `ship-issues` が起こします。Issue ごとに Agent tool で
   `isolation: "worktree"` のワーカーを1つ立て、`issue-pr` のワークフローを踏襲させます。
   オーケストレータ本体では実装しません。
@@ -74,7 +80,8 @@ open Issue 群 ─/backlog-review─> ready / blocked / duplicate … に分類�
   スキル」を行ごとに出します。自分では何も実行しません。
 - `backlog-review` は `ship-issues` に渡す番号を選ぶ前段です。open Issue を読んで
   ready / already implemented / blocked / duplicate / obsolete / needs-info / needs investigation
-  に分類し、`/ship-issues <ready の番号>` と `/label-apply <食い違いの番号>` の案を出します。
+  に分類し、`/ship-issues <ready の番号>` / `/issue-refine <needs investigation の番号>` /
+  `/label-apply <食い違いの番号>` の案を出します。
   GitHub 側は一切変更しません（ラベルも close もコメントもしない）。
 
 Issue の設計と実装は必ず別フェーズに分け、**1 Issue = 1 PR、1 ワーカー = 1 Issue** を守ります。
@@ -91,7 +98,7 @@ Skill tool で呼ぶことはできません**（モデルが選択できない�
 
 - `ship-issues` のワーカー → `issue-pr/SKILL.md`
 - `ship-issues --merge` / `issue-pr --merge` → `pr-land/SKILL.md`
-- `label-apply` / `triage-notes` / `issue-pr` / `pr-ready` / `backlog-review` → `label-apply/labeling-rules.md`
+- `label-apply` / `triage-notes` / `issue-refine` / `issue-pr` / `pr-ready` / `backlog-review` → `label-apply/labeling-rules.md`
 
 このため Codex 側（Import 先は `~/.agents/skills`）では、これらのパス参照が解決しません。
 
@@ -120,7 +127,7 @@ GitHub MCP）はスキルからは使いません。対話中に Issue を検索
 
 | スキル | Codex での扱い |
 | --- | --- |
-| `cm` `triage-notes` `issue-pr` `pr-ready` `pr-review` `pr-fix` `pr-land` `label-apply` `backlog-review` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` の `pr-land` 参照と、`label-apply` 系の `labeling-rules.md` 参照は `~/.claude` のパスなので解決しない |
+| `cm` `triage-notes` `issue-refine` `issue-pr` `pr-ready` `pr-review` `pr-fix` `pr-land` `label-apply` `backlog-review` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` の `pr-land` 参照と、`label-apply` 系の `labeling-rules.md` 参照は `~/.claude` のパスなので解決しない |
 | `worktree-sweep` `label-sync` `work-status` | `sh` / `git` / `gh` にしか依存しない。`~/.claude/scripts/*.sh` は Import の対象外なので、Codex 側では実体が要る |
 | `ship-issues` `ship-notes` | Claude Code の Agent tool と `isolation: "worktree"` が前提。Codex には対応機能が無いため動かない |
 
@@ -159,6 +166,38 @@ Codex が読む frontmatter は `name` と `description` だけです。
   リポジトリに既にあるものから type（と根拠のある status）を `--label` で付ける。作らない
 - 起票後に依存関係を分析し、実行ウェーブに分類する
 
+## issue-refine
+
+既存の Issue をリポジトリと突き合わせて調査し、実装ワーカーが本文だけで着手できる品質に
+**本文を書き換えます**。**実装はしません**（ブランチも PR も作りません）。
+スキルを叩いたこと自体が書き換えの承認で、適用前に再確認は取りません（`--dry-run` を除く）。
+
+- 引数は Issue 番号の並び（`31` / `#31` / URL、空白・カンマ区切り）。無引数では動かない
+  （既定で全 open を触らない）。1 件ずつ独立に処理し、1 件の失敗で残りを止めない
+- 着手前に既存 PR / 重複 Issue を検索し、refinable / already implemented / duplicate /
+  obsolete / blocked に判定する。refinable と blocked だけ本文を書き換え、他は報告のみ
+  （close も新規起票もしない）
+- コードを読んで現状挙動・原因候補・影響モジュール・テスト・依存を確認する。再現や
+  根本原因は根拠なしに断言しない。言い換えるだけで情報が増えないなら書き換えず報告
+- 本文は `triage-notes` と同じ Problem / Expected behavior / Acceptance criteria / Scope /
+  Out of scope / Investigation notes に、必要なときだけ Dependencies / Open questions /
+  Split proposal を足す。元本文の事実・例・ログ・リンクはすべて取り込み、コードと矛盾する
+  記述も消さず Investigation notes で指摘する。実装方法は縛らない
+- タイトルは観測可能な問題を誤って表しているときだけ変え、報告する
+- 大きすぎる Issue は既定では分割案（子のタイトル・Problem・受け入れ条件）を本文と報告に
+  書くだけ。`--split` を付けたときだけ子 Issue を `gh issue create` で起票し、親本文の
+  Split proposal を `Split into` に置き換える。親は close しない
+- 適用前に計画表（番号 / verdict / タイトル / ラベル / split）と本文案を出す。`--dry-run` は
+  そこで止まる。適用は本文をリポジトリ外の一時ファイルに書いて `gh issue edit --body-file`
+- ラベルは [`label-apply/labeling-rules.md`](label-apply/labeling-rules.md) の規則で、
+  type が無ければ付け、open な依存があれば blocked。needs-info は規則の根拠があるときだけで、
+  自分が書いた Open questions を根拠にしない
+- 報告は Issue ごとの verdict / 変えた節 / ラベル / 分割 / Open questions と、Issue 間の
+  依存（ウェーブ形式）、触らなかった Issue と理由
+
+`gh issue edit` / `gh issue create` は書き込み系なので `permissions.allow` に入れておらず、
+実行時に都度確認が入ります。
+
 ## ship-issues
 
 既に起票済みの Issue 番号を複数受け取り、並列ワーカーに割り当てて PR 化する
@@ -167,7 +206,8 @@ Codex が読む frontmatter は `name` と `description` だけです。
 - 引数は `101 102 103` / `#101 #102 #103` / `101,102,103` のいずれの形でも受け付け、
   重複を除いた Issue リストに正規化する。指定外の Issue には手を出さない
 - 着手前に各 Issue を ready / already implemented / blocked / obsolete / duplicate /
-  needs investigation に分類し、既存 PR と競合する実装を起こさない
+  needs investigation に分類し、既存 PR と競合する実装を起こさない。needs investigation は
+  ワーカーを起こさず `/issue-refine <N>` を案内する
 - ready な Issue について影響範囲（API・共有型・スキーマ・マイグレーション・生成物・
   lock ファイル・ルーティング・ビルド設定など）を見積もり、Issue 間の関係を
   independent / potentially conflicting / semantically dependent /
@@ -423,8 +463,9 @@ needs investigation）に needs-info を足した 7 分類を使います。
   blocked と needs-info の定義は [`labeling-rules.md`](label-apply/labeling-rules.md) step 4
   のもの。迷ったら needs investigation にして何が足りないかを書き、推測で ready にしない
 - 出力は件数サマリ → 分類ごとの表（番号 / タイトル / 根拠 / 注記）→ 既存 status ラベルとの
-  食い違い一覧 → 次に叩くコマンド案（`/ship-issues <ready 番号>`、`/label-apply <食い違い番号>`、
-  duplicate / obsolete / already implemented の `gh issue close` 案）。案は出すだけで実行しない。
+  食い違い一覧 → 次に叩くコマンド案（`/ship-issues <ready 番号>`、`/issue-refine <needs investigation 番号>`、
+  `/label-apply <食い違い番号>`、duplicate / obsolete / already implemented の `gh issue close` 案）。
+  案は出すだけで実行しない。
   末尾に「Nothing was changed on GitHub.」を必ず書く
 - 影響範囲の見積もりやウェーブ設計はしない（`ship-issues` の仕事）。ready 同士に明白な順序
   依存があれば `after #A` と注記するに留める

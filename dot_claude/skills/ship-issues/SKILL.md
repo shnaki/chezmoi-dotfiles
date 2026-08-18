@@ -165,6 +165,10 @@ Classify each Issue as one of:
 
 Do not start a worker for an Issue that is clearly already implemented, obsolete, or duplicated.
 
+Do not start a worker for an Issue that needs investigation either. Report it and
+suggest `/issue-refine <N>` so the Issue is made implementable before it is shipped;
+do not refine it here.
+
 # 4. Inspect likely implementation impact
 
 For every ready Issue, inspect enough of the repository to estimate its likely implementation footprint.

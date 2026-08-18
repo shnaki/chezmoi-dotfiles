@@ -156,6 +156,7 @@ Then **Suggested next commands**, as text the user can run, never executed by th
 skill:
 
 - `/ship-issues <numbers>` with the ready Issues in the order the notes suggest
+- `/issue-refine <numbers>` with the needs investigation Issues
 - `/label-apply <numbers>` with the Issues in the mismatch list
 - one `gh issue close <N> --reason <completed|"not planned"> --comment "<why, naming
   the PR or the surviving Issue>"` line per already implemented, duplicate, and
