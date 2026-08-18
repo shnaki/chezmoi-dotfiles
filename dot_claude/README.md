@@ -15,7 +15,8 @@
 `~/.claude` のパスは Windows / Linux ともに同じなので、OS ごとの分岐はありません。
 
 `~/.claude/ship-issues/` はスキルが書き出す実行状態（中断・再開用）で、管理対象では
-ありません（[skills/README.md](skills/README.md#ship-issues)）。
+ありません（[skills/README.md](skills/README.md#ship-issues)）。`work-status` が
+未完の run を探すためにここを読みます（[後述](#進行中の作業を一覧する)）。
 
 ## settings.json はキー単位でマージする
 
@@ -257,6 +258,63 @@ sh ~/.claude/scripts/label-sync.sh --dry-run
 - rename 元が複数あるとき（`chore` と `ci` の両方があるなど）は表の先頭のものだけ rename し、
   残りは `superseded` として報告する。統合は `/label-apply` で付け替えてから `--prune` で消す
 - `-R owner/repo` で対象を指定できる。省略時はカレントディレクトリのリポジトリ
+
+## 進行中の作業を一覧する
+
+`ship-issues` は数時間走り、状態が 4 か所に散ります。GitHub の open PR、
+`.claude/worktrees/agent-*` の worktree、ローカルブランチ、`~/.claude/ship-issues/` の
+run ファイルです。途中で止めた後や別セッションから「いま何が動いていて、次に何を
+叩けばいいか」を横断して読む手段が無かったので、`scripts/work-status.sh` を置いています。
+`/work-status` スキルはこれを呼んで表に整形するだけです。
+
+```bash
+sh ~/.claude/scripts/work-status.sh
+```
+
+読み取り専用です。唯一の副作用は `git fetch --prune` で、`--no-fetch` で止まります。
+書き込みモードが無いので `--dry-run` もありません。
+
+出力はタブ区切りで、1 行目の列が種別です。`repo`（リポジトリ・base・呼び出し元・
+fetch / gh の状態）、`row`（作業単位ごとに Issue / PR / branch / worktree / agent / state /
+next / reason）、`state` と `srow`（`DONE` の無い run ファイルの見出しと表の行をそのまま）、
+`note`、`summary`。4 つの情報源はブランチ名で結合し、Issue 番号は PR の
+`closingIssuesReferences` → ブランチ名の `<N>-` 接頭辞 → run ファイルの表、の順に引きます。
+
+`next` は上から最初に当たった行で決めます:
+
+| 観測 | next |
+| --- | --- |
+| git が追跡していない worktree ディレクトリ | `/worktree-sweep` |
+| worktree lock の pid が生きている／pid の無い lock | `wait` |
+| PR が draft | `wait` |
+| `CONFLICTING` / `DIRTY`、checks 失敗、`CHANGES_REQUESTED` | `/pr-fix N` |
+| checks 実行中、mergeable 未計算 | `wait` |
+| `APPROVED` で checks が緑か無し | `/pr-land N` |
+| `REVIEW_REQUIRED`、または未レビューで checks が緑か無し | `/pr-review N` |
+| `BLOCKED` | `wait` |
+| PR 無し、worktree に未コミット変更、直近 60 分に更新 | `wait` |
+| PR 無し、未コミット変更、run ファイルに載っている | `/ship-issues --resume` |
+| PR 無し、未コミット変更 | `/pr-ready (in <worktree>)` |
+| PR 無し、base より先のコミットあり、run ファイルに載っている | `/ship-issues --resume` |
+| PR 無し、base より先のコミットあり | `/pr-ready` |
+| PR 無し、空の worktree（直近更新あり／なし） | `wait` ／ `/worktree-sweep` |
+| ブランチが base にマージ済み、または upstream が消えた | `/worktree-sweep` |
+| run ファイルの Issue にマージ済み PR がある | `-`（完了。ファイルに `DONE` が無いだけ） |
+| run ファイルの Issue にローカルにも GitHub にも痕跡が無い | `/ship-issues --resume` |
+
+- 「先のコミット」は `origin/<base>` と ローカル `<base>` の両方に無いコミットで数える。
+  未 push の main から切ったブランチが「PR の無い作業」に見えないようにするため。
+  main 自体が未 push なら `note` で知らせる
+- Agent の生存判定はヒューリスティック。確定するのは worktree lock の pid が生きて
+  いること（`alive:<pid>`）だけで、`recent:<5m` のような直近更新、ブランチ、PR、
+  run ファイルの記載はヒント。別セッションのバックグラウンド Agent task はここからは
+  見えない。この限界はスクリプトが毎回 `note` に出し、スキルも回答に含める
+- run ファイルは `DONE` の有無と見出し 5 行だけを読み、表は生の行を `srow` で流す。
+  run ごとに列構成が違うので構造解析はしない。「どこまで進んだか」はモデルが読み、
+  事実は git / gh の列で見る
+- `gh` が無い・未認証・remote 無しでも止まらない。PR 系の列を `?` にしてローカル
+  信号だけで判定し、`repo` 行の `gh` に理由を出す
+- 他リポジトリの未完 run はファイル名を `note` に並べるだけ
 
 ## 注意
 

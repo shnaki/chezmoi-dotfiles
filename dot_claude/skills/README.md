@@ -16,8 +16,9 @@
 | [`worktree-sweep`](#worktree-sweep) | 残った worktree と不要ブランチを掃除する | スクリプトへ渡すオプション | `/worktree-sweep` のみ |
 | [`label-sync`](#label-sync) | 既定のラベルセットをリポジトリに流し込む | `--dry-run` / `--prune` / `-R owner/repo`（任意） | `/label-sync` のみ |
 | [`label-apply`](#label-apply) | 既存の Issue / PR にラベルを付け直す | `--dry-run` / `--issues` / `--prs` / `--all` / 番号（任意） | `/label-apply` のみ |
+| [`work-status`](#work-status) | 進行中の PR / worktree / ship-issues run を一覧し、次に叩くコマンドを出す（読むだけ） | `--no-fetch`（任意） | `/work-status` のみ |
 
-`cm` 以外の 11 は `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
+`cm` 以外の 12 は `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
 起動しません。`cm` だけは `user-invocable: true` で、コミット時にモデルからも選ばれます。
 
 ## スキル間の関係
@@ -42,6 +43,9 @@ PR ─/pr-review─> 指摘 ─/pr-fix─> 修正を push ─/pr-land─> マー
 /label-sync ──> リポジトリのラベルを既定セットに揃える ──> /label-apply で既存 Issue / PR に付け直す
 /triage-notes /issue-pr /pr-ready ──起票・PR 作成時──> label-apply/labeling-rules.md の規則で
                                                         既存ラベルから選んで付ける（作らない）
+
+/work-status ──> いま何が動いていて次に何を叩くかを一覧（読むだけ）
+                 ──> /pr-fix /pr-review /pr-land /pr-ready /ship-issues --resume /worktree-sweep へ案内
 ```
 
 - 起票だけしたいときは `/triage-notes`。既に Issue があるなら `/ship-issues` に
@@ -61,6 +65,9 @@ PR ─/pr-review─> 指摘 ─/pr-fix─> 修正を push ─/pr-land─> マー
   同じ規則ファイルを読んで、**そのリポジトリに既にあるラベルから**選びます。既定セットを
   入れていないリポジトリでは `bug` / `enhancement` など既存の語彙に合わせ、ラベルは
   作りません。
+- `work-status` は上のどれにも介入しない読み取り専用の一覧です。`ship-issues` が数時間
+  走っている最中や中断後に、open PR・agent worktree・未完の run を横断して「次に叩く
+  スキル」を行ごとに出します。自分では何も実行しません。
 
 Issue の設計と実装は必ず別フェーズに分け、**1 Issue = 1 PR、1 ワーカー = 1 Issue** を守ります。
 
@@ -106,7 +113,7 @@ GitHub MCP）はスキルからは使いません。対話中に Issue を検索
 | スキル | Codex での扱い |
 | --- | --- |
 | `cm` `triage-notes` `issue-pr` `pr-ready` `pr-review` `pr-fix` `pr-land` `label-apply` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` の `pr-land` 参照と、`label-apply` 系の `labeling-rules.md` 参照は `~/.claude` のパスなので解決しない |
-| `worktree-sweep` `label-sync` | `sh` / `git` / `gh` にしか依存しない。`~/.claude/scripts/*.sh` は Import の対象外なので、Codex 側では実体が要る |
+| `worktree-sweep` `label-sync` `work-status` | `sh` / `git` / `gh` にしか依存しない。`~/.claude/scripts/*.sh` は Import の対象外なので、Codex 側では実体が要る |
 | `ship-issues` `ship-notes` | Claude Code の Agent tool と `isolation: "worktree"` が前提。Codex には対応機能が無いため動かない |
 
 Codex が読む frontmatter は `name` と `description` だけです。
@@ -365,3 +372,23 @@ GitHub へのコメント投稿もしません。
   Issue は同じ変更ごとに `gh issue edit N1 N2 ... --add-label --remove-label` でまとめて
   適用し、PR は `gh pr edit` を 1 件ずつ
 - type ラベルを 10 件超から外す、または 100 件超を触るときだけ、適用前に一度確認する
+
+## work-status
+
+カレントリポジトリで「いま何が動いていて、次に何を叩くか」を一覧します。読むだけで、
+何も変更しません。判定は全て `~/.claude/scripts/work-status.sh` にあり、スキルは出力を
+表に整形して限界を添えるだけです。
+
+- 対象は repo 全体。open PR（`gh pr list`）、agent worktree とローカルブランチ
+  （`git worktree list` / `for-each-ref`）、`~/.claude/ship-issues/` の `DONE` が無い run を
+  ブランチ名で結合し、1 単位 1 行にする
+- 各行の `next` は `/pr-fix` / `/pr-review` / `/pr-land` / `/pr-ready` /
+  `/ship-issues --resume` / `/worktree-sweep` / `wait` のどれか。判定表は
+  [../README.md](../README.md#進行中の作業を一覧する) とスクリプト冒頭のコメントにある
+- state file は「その Issue が ship-issues 由来か」「run の進み具合の主張」としてだけ読む。
+  事実は git と gh の列で、食い違えば表が勝つ
+- Agent の生存はヒューリスティック。確定信号は worktree lock の pid が生きていることだけで、
+  直近の更新・ブランチ・PR・state file はヒント。別セッションのバックグラウンド Agent は
+  見えない。この限界は毎回出力に含める
+- 提案したコマンドは実行しない。「やって」と言われたら呼ぶスキル名を答える
+- `--no-fetch` で `git fetch --prune` を省く（唯一の副作用）
