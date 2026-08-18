@@ -9,7 +9,9 @@ argument-hint: "[commit message or description of the change]"
 
 # Instructions
 
-Commit the current changes using the Conventional Commits format.
+Commit the current changes using the Conventional Commits format. When the repository
+already follows a different commit convention (its `git log`, CLAUDE.md, or
+CONTRIBUTING.md say so), follow the repository instead of the format below.
 
 ## Step 1: Review the changes
 
@@ -17,9 +19,11 @@ Commit the current changes using the Conventional Commits format.
 git status
 git diff --staged
 git diff
+git log --oneline -20
 ```
 
-Understand every change before proceeding.
+Understand every change before proceeding. The recent log also shows the language and
+style the repository's commit messages use; step 4 follows it.
 
 ## Step 2: Classify and group the changes
 
@@ -75,22 +79,29 @@ git add <file1> <file2> ...
 - `ci`: CI configuration change
 - `build`: build or dependency change
 - `perf`: performance improvement
+- `style`: formatting only, no code change
 - `revert`: reverting a change
 
 ### scope (optional)
 
 The area affected by the change. Omit it when it adds nothing.
 
+### language
+
+Write the subject and body in the language the repository's existing commits use
+(`git log` from step 1). When the repository has no established convention, write them
+in Japanese.
+
 ### subject (required)
 
-- Write it in concise Japanese
+- Concise
 - No trailing punctuation
 
 ### body (optional)
 
 - Explain the reason and background of the change
 - Describe why the change was made, not what was changed
-- Write it in Japanese, with trailing punctuation
+- Full sentences with trailing punctuation
 
 ### footer (only when applicable)
 
