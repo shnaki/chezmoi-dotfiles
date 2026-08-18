@@ -1,11 +1,13 @@
 ---
 name: pr-fix
-description: "Apply review findings to an existing Pull Request branch: decide which findings to accept, fix them, verify, commit, and push without merging."
+description: "Apply review findings, failing checks, and base-branch conflicts to an existing Pull Request branch: decide which findings to accept, fix them, verify, commit, and push without merging."
 argument-hint: "[pr-number] [findings...]"
 disable-model-invocation: true
 ---
 
 Apply review findings to the Pull Request identified by the first token of `$ARGUMENTS`.
+"Findings" here also covers what GitHub itself reports against the Pull Request: failing
+checks and conflicts with the base branch.
 
 This skill modifies the Pull Request branch. It does not merge, and it does not post
 anything to GitHub.
@@ -48,7 +50,10 @@ Gather findings from these sources, in order:
 gh pr view <N> --comments
 ```
 
-For inline review comments, read them with a GET request only:
+This includes a review that `pr-review --post` left as a Pull Request comment (it
+starts with a verdict line: `APPROVE` / `REQUEST CHANGES` / `COMMENT`). Treat its
+findings like a human review. For inline review comments, read them with a GET request
+only:
 
 ```bash
 gh api repos/<owner>/<repo>/pulls/<N>/comments
@@ -56,18 +61,47 @@ gh api repos/<owner>/<repo>/pulls/<N>/comments
 
 Never use `gh api` with a method that writes.
 
-If sources 1 and 2 are both empty and GitHub has no unresolved review findings, stop
-and report that there is nothing to fix. Do not invent work.
+4. conflicts with the base branch:
+
+```bash
+gh pr view <N> --json mergeable,mergeStateStatus,baseRefName
+```
+
+`mergeable` = `CONFLICTING` or `mergeStateStatus` = `DIRTY` is a finding: "resolve the
+conflicts with `<base>`". `mergeStateStatus` = `BEHIND` is a finding only when the
+repository requires branches to be up to date before merging (`gh pr merge` refuses,
+or the protection rule says so); otherwise note it and leave it.
+
+5. failing checks:
+
+```bash
+gh pr checks <N>
+```
+
+Every failing check is a finding. Read the failing run's log with
+`gh run view <run-id> --log-failed` (the run id is in the check's URL) before deciding
+whether the failure is caused by this Pull Request.
+
+If all five sources are empty, stop and report that there is nothing to fix. Do not
+invent work.
 
 List the collected findings before changing anything, so the set being acted on is
 explicit.
 
 # 3. Get onto the Pull Request branch
 
-Determine the Pull Request's head branch (`gh pr view <N> --json headRefName`).
+Determine the Pull Request's head branch (`gh pr view <N> --json headRefName`), then
+where that branch is checked out (`git worktree list`).
 
-- Already on that branch, in a checkout that is not the default-branch checkout → continue there.
-- Otherwise → work in an isolated worktree. Use the EnterWorktree tool with the name `pr-<N>`, then check the Pull Request out into it:
+- Already on that branch, in a checkout that is not the default-branch checkout →
+  continue there.
+- The branch is checked out in another worktree (the usual case after `ship-issues`:
+  the worker's worktree under `.claude/worktrees/` still holds it) → work in that
+  worktree. `cd` there or prefix commands with `git -C <path>`; do not create a second
+  worktree, because `gh pr checkout` would fail with `already checked out at …`. Do not
+  start if the worktree has uncommitted changes that are not yours: report and stop.
+- Nowhere → work in an isolated worktree. Use the EnterWorktree tool with the name
+  `pr-<N>`, then check the Pull Request out into it:
 
 ```bash
 gh pr checkout <N>
@@ -111,6 +145,23 @@ update a regression test when the repository's conventions warrant it.
 
 Do not take the opportunity to refactor, reformat, rename, or upgrade dependencies.
 
+For a conflict with the base branch, merge the base into the head branch and resolve
+the conflicts there:
+
+```bash
+git fetch origin
+git merge origin/<base>
+```
+
+Never rebase: the branch is already pushed, and rewriting it would need a force-push.
+Resolve each conflict by reading both sides and the Issue; do not pick one side
+mechanically. Regenerate generated files with the repository's tooling rather than
+resolving them by hand. Verification (step 7) runs against the merged result.
+
+For a failing check, fix it only when the log shows the failure comes from this Pull
+Request. A failure that also happens on the base branch is pre-existing: decline it,
+say so in the report, and do not modify unrelated code to make the check green.
+
 # 7. Verify
 
 Find the verification the repository defines: CLAUDE.md, `.claude/rules/`,
@@ -145,8 +196,12 @@ Commit following the `cm` skill workflow:
 
 - group by logical theme; one theme, one commit
 - stage files explicitly; never `git add -A` or `git add .`
-- Conventional Commits format with a concise Japanese subject
+- Conventional Commits format, with the subject in the language of the repository's
+  existing commits (Japanese when the repository has no established convention)
 - no tool traces, no co-author trailers
+
+A base-branch merge commit produced in step 6 is kept as it is; do not squash or reword
+it.
 
 Push to the existing remote branch. Do not force-push. Do not push to the default branch.
 
@@ -161,6 +216,7 @@ Return:
 - Pull Request number and URL
 - findings fixed, each with what changed
 - findings declined, each with the reason
+- conflicts resolved (files) and checks addressed, if any
 - verification run and its result, including pre-existing failures
 - the pushed branch and commits
 - follow-up work that should become a separate Issue
