@@ -20,10 +20,13 @@
       "Bash(gh label list:*)",
       "Bash(gh release list:*)",
       "Bash(gh release view:*)",
+      "Bash(gh run list:*)",
       "Bash(gh run view:*)",
       "Bash(gh search issues:*)",
       "Bash(gh search prs:*)",
-      "Bash(git commit:*)"
+      "Bash(gh workflow list:*)",
+      "Bash(git commit:*)",
+      "Bash(sh ~/.claude/scripts/work-status.sh:*)"
     ],
     "deny": ["mcp__Claude_Browser"]
   },

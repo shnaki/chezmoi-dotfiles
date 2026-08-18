@@ -1,7 +1,7 @@
 ---
 name: pr-ready
 description: "Turn the work on the current branch into one Pull Request: review the diff, run verification, commit, push, and open the PR."
-argument-hint: "[issue-number] [--merge]"
+argument-hint: "[issue-number] [--merge] [--ignore-checks]"
 disable-model-invocation: true
 ---
 
@@ -9,15 +9,19 @@ Turn the work on the current branch into exactly one Pull Request.
 
 # 0. Parse the arguments
 
-`--merge` is an option, not an Issue number. Remove it before interpreting the rest.
-With it, land the Pull Request after creating it (step 10). Without it, stop at Pull
-Request creation.
+`--merge` and `--ignore-checks` are options, not an Issue number. Remove them before
+interpreting the rest. With `--merge`, land the Pull Request after creating it
+(step 10). Without it, stop at Pull Request creation. `--ignore-checks` only means
+something together with `--merge`: it is passed to `pr-land` unchanged (for repositories
+where Actions cannot run); alone it is ignored and reported as such.
 
 What remains is an optional Issue number: `31`, `#31`, and a full Issue URL all mean
 Issue 31. Strip any leading `#` so the number is never interpolated as `##31`. When
 given, that Issue defines the scope boundary and the Pull Request closes it. When
 omitted, infer the Issue from the branch and commits (see step 7); the Pull Request may
 have no Issue at all.
+
+# Repository instructions
 
 Follow all repository-specific instructions in:
 
@@ -35,7 +39,7 @@ Follow all repository-specific instructions in:
 - Never push to the default branch.
 - Never force-push.
 - Never merge the Pull Request, unless `--merge` was requested (step 10).
-- All GitHub operations (reading, searching, and creating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. If `gh` is unavailable or not authenticated, stop and report instead of falling back.
+- All GitHub operations (reading, searching, and creating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. Before the first `gh` call, run `gh auth status`; if `gh` is unavailable or not authenticated, stop and report instead of falling back.
 
 # 1. Check the branch
 
@@ -136,7 +140,7 @@ If there is nothing to commit and nothing on the branch beyond the base, stop an
 
 # 7. Resolve the Issue
 
-If `$ARGUMENTS` names an Issue:
+If step 0 produced an Issue number:
 
 - read its title, body, and relevant comments (`gh issue view <N> --comments`)
 - confirm that the work on the branch actually addresses it
@@ -157,7 +161,7 @@ Do not push to the default branch. Do not force-push.
 
 # 9. Create exactly one Pull Request
 
-First check whether a Pull Request already exists for this branch (`gh pr list --head <branch>`). If one exists, do not create another: report its URL and stop.
+First check whether a Pull Request already exists for this branch (`gh pr list --head <branch> --state all`; for a branch pushed to a fork, `--head <owner>:<branch>`). If an open one exists, do not create another: report its URL and stop. A closed or merged one is not a blocker; mention it and continue.
 
 Create the Pull Request with `gh pr create`.
 
@@ -196,7 +200,8 @@ Without `--merge`, stop here. Do not merge the Pull Request.
 Only with `--merge`. Without it, this step does not run.
 
 Follow the workflow in `~/.claude/skills/pr-land/SKILL.md`. Read it by path; `pr-land`
-is `disable-model-invocation: true` and cannot be selected as a skill from here.
+is `disable-model-invocation: true` and cannot be selected as a skill from here. Pass
+`--ignore-checks` on when it was given.
 
 If `pr-land` stops (draft, conflict, failing checks, `CHANGES_REQUESTED`, `BLOCKED`),
 report the stop condition. Do not override it.

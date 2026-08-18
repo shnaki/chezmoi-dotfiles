@@ -1,7 +1,7 @@
 ---
 name: pr-land
 description: "Merge a Pull Request that is ready to land: verify checks and review state, merge it, confirm the linked Issue closed, and clean up the local branch and worktree."
-argument-hint: "[pr-number] [--keep-branch]"
+argument-hint: "[pr-number] [--keep-branch] [--ignore-checks]"
 disable-model-invocation: true
 ---
 
@@ -14,12 +14,14 @@ That authorization does not extend to forcing a merge past a problem. Every stop
 condition below is a hard stop: report it and end. Do not fix, override, or work
 around it here. Fixing review findings and failing checks is the job of `pr-fix`.
 
-All GitHub operations (reading, searching, merging Pull Requests and reading Issues) go through the GitHub CLI (`gh`). Do not use another GitHub client. If `gh` is unavailable or not authenticated, stop and report instead of falling back.
+All GitHub operations (reading, searching, merging Pull Requests and reading Issues) go through the GitHub CLI (`gh`). Do not use another GitHub client. Before the first `gh` call, run `gh auth status`; if `gh` is unavailable or not authenticated, stop and report instead of falling back.
 
 # Core rules
 
 - Merge exactly one Pull Request per invocation.
-- Never merge a Pull Request that is draft, closed, already merged, conflicting, or has failing checks.
+- Never merge a Pull Request that is draft, closed, already merged, or conflicting. Never
+  merge one with failing checks unless `--ignore-checks` was given (step 2 says when that
+  is appropriate).
 - Never merge a Pull Request whose review decision is `CHANGES_REQUESTED`.
 - Never push commits to the Pull Request branch. This skill does not modify code.
 - Never force-push.
@@ -29,9 +31,18 @@ All GitHub operations (reading, searching, merging Pull Requests and reading Iss
 
 # 0. Parse the arguments
 
-`--keep-branch` is an option, not a Pull Request number. Remove it before interpreting
-the rest. With it, leave the remote branch in place after merging (step 5). Without it,
-the remote branch is deleted.
+`--keep-branch` and `--ignore-checks` are options, not a Pull Request number. Remove
+them before interpreting the rest.
+
+- `--keep-branch`: leave the remote branch in place after merging (step 5). Without it,
+  the remote branch is deleted.
+- `--ignore-checks`: failing checks are not a stop condition. This exists for
+  repositories where GitHub Actions cannot run — the account is out of Actions minutes
+  ("payments have failed or your spending limit needs to be increased") or Actions is
+  disabled — so every check fails or never starts and none of that says anything about
+  the code. It does not bypass branch protection: when a failing check is *required*,
+  GitHub refuses the merge and that stays a stop condition (`mergeStateStatus` =
+  `BLOCKED`).
 
 # 1. Resolve the Pull Request number
 
@@ -48,15 +59,17 @@ If nothing remains, resolve the Pull Request for the current branch
 Read the Pull Request state:
 
 ```bash
-gh pr view <N> --json number,title,state,isDraft,mergeable,mergeStateStatus,reviewDecision,headRefName,baseRefName,url
+gh pr view <N> --json number,title,state,isDraft,mergeable,mergeStateStatus,reviewDecision,headRefName,baseRefName,isCrossRepository,url
 ```
 
 Stop and report right away if any of these holds:
 
 - `state` is not `OPEN` (already merged or closed)
 - `isDraft` is true
-- `mergeable` is `CONFLICTING`
-- `reviewDecision` is `CHANGES_REQUESTED`
+- `reviewDecision` is `CHANGES_REQUESTED` → `/pr-fix <N>` applies the requested changes
+
+`mergeable` is not read yet: right after a push GitHub reports `UNKNOWN`, and it is
+re-read after the checks below.
 
 Then wait for the checks:
 
@@ -64,10 +77,35 @@ Then wait for the checks:
 gh pr checks <N> --watch
 ```
 
-If any required check fails, stop and report the failing checks. Do not merge, and do
-not attempt to fix the failure.
+Read the output, not the exit code: `gh pr checks` exits 1 when a check failed, 8 while
+checks are pending, and 1 with `No checks reported on the '<branch>' branch` when the
+Pull Request has no checks at all. None of these is a tool error.
 
-If the repository has no checks at all, say so and continue.
+- **No checks reported** → GitHub Actions is disabled for the repository, or it has no
+  workflow for this event. Record `checks: none (Actions disabled or no workflows)` and
+  continue; there is nothing to wait for.
+- **`--watch` cut off** by the tool's timeout → re-read `gh pr checks <N>` without
+  `--watch` every few minutes. If checks are still pending after about 30 minutes in
+  total, stop and report; do not merge around them.
+- **A check failed** → read that run once, without its log:
+
+  ```bash
+  gh run view <run-id>
+  ```
+
+  (the run id is the number after `/runs/` in the check's link). When the ANNOTATIONS
+  section says `The job was not started because recent account payments have failed or
+  your spending limit needs to be increased`, the failure is a billing failure: the
+  account is out of Actions minutes, the job never ran, and the check says nothing about
+  the code. Report it as `checks failed: billing (Actions minutes exhausted)`.
+
+  Without `--ignore-checks`, stop and report the failing checks. Do not merge, and do
+  not attempt to fix the failure. Suggest `/pr-land <N> --ignore-checks` when every
+  failure is a billing failure; otherwise `/ci-review <N>` to find out why they fail and
+  `/pr-fix <N> --checks-only` to fix what the Pull Request caused.
+
+  With `--ignore-checks`, list the failing checks (name, and `billing` when it is one)
+  and continue. Say in the report that they were ignored on request.
 
 Only after the checks have finished, read `mergeable` and `mergeStateStatus` again with
 the same `gh pr view` call. The order matters: while required checks are still running,
@@ -76,8 +114,9 @@ GitHub reports `mergeStateStatus` = `BLOCKED`, and right after a push it reports
 
 - `mergeable` is `UNKNOWN` → GitHub has not computed it yet. Re-read every few seconds
   for up to about a minute. If it stays `UNKNOWN`, stop and report.
-- `mergeStateStatus` is `BLOCKED` (checks green) → branch protection is not satisfied,
-  usually a required review. Stop and report; approval must come from GitHub.
+- `mergeStateStatus` is `BLOCKED` (checks green, or ignored) → branch protection is not
+  satisfied: a required review, or a required check that failed. Stop and report;
+  approval must come from GitHub, and `--ignore-checks` does not lift a required check.
 - `mergeStateStatus` is `DIRTY` or `mergeable` is `CONFLICTING` → stop and report;
   `/pr-fix <N>` resolves the conflict.
 - `mergeStateStatus` is `BEHIND` and the repository requires branches to be up to date
@@ -137,7 +176,10 @@ gh pr merge <N> --squash --subject "<subject>" --body "<body>"
 
 `--delete-branch` makes `gh` delete, in this order: the local branch of the same name if
 one exists (switching to the base branch first when it is checked out), then the remote
-branch. For a Pull Request from a fork, `gh` skips the remote deletion.
+branch. For a Pull Request from a fork (`isCrossRepository` is true in step 2), `gh`
+skips the remote deletion, and so does this skill: the head branch lives in the fork,
+and a branch of the same name in `origin` is not the Pull Request's. Skip the
+remote-branch check below entirely and say so in the report.
 
 The order matters. If the local branch is checked out in a worktree (the normal case
 when `ship-issues` lands a Pull Request while the worker's worktree still exists),
@@ -150,22 +192,21 @@ treat this as a stop condition, and do not retry the merge. Instead:
    not delete it yourself.
 3. Continue with the remote-branch check below.
 
-After the merge, unless `--keep-branch` was given, make sure the remote branch is really
-gone rather than trusting the exit code:
+After the merge, unless `--keep-branch` was given or the Pull Request is from a fork,
+make sure the remote branch is really gone rather than trusting the exit code:
 
 ```bash
 git ls-remote --exit-code --heads origin <headRefName>
 ```
 
-Exit code 0 means the branch still exists (2 means it is gone). If it still exists and
-the Pull Request is not from a fork, delete it:
+Exit code 0 means the branch still exists (2 means it is gone). If it still exists,
+delete it:
 
 ```bash
 git push origin --delete <headRefName>
 ```
 
-Take `<headRefName>` from step 2. Deleting several at once is fine — pass them all to a
-single `git push origin --delete`.
+Take `<headRefName>` from step 2.
 
 This is the one place where deleting a branch with your own `git` command is correct: it
 is the remote branch of a Pull Request you just merged, not a local branch or a worktree,
@@ -240,6 +281,7 @@ Return:
 - merge method used
 - whether the remote branch was deleted or kept (`--keep-branch`)
 - the Issue that closed, or a note that it did not
-- check results at merge time
+- check results at merge time: passed, `none (Actions disabled or no workflows)`, or the
+  failing checks that `--ignore-checks` skipped (naming billing failures as such)
 - local cleanup result, including everything the sweeper kept and why
 - if the merge did not happen: the exact stop condition and what has to happen first

@@ -1,7 +1,7 @@
 ---
 name: issue-pr
 description: "Implement exactly one GitHub Issue as exactly one focused Pull Request."
-argument-hint: "[issue-number] [--merge]"
+argument-hint: "[issue-number] [--merge] [--ignore-checks]"
 disable-model-invocation: true
 ---
 
@@ -15,9 +15,13 @@ Normalize the Issue number: `31`, `#31`, and a full Issue URL all mean Issue 31.
 any leading `#` so the number is never interpolated as `##31`. Use the normalized number
 everywhere below, including in `Closes #<N>`.
 
-`--merge` is an option, not an Issue number. Remove it before interpreting the rest.
-With it, land the Pull Request after creating it (step 13). Without it, stop at Pull
-Request creation.
+`--merge` and `--ignore-checks` are options, not an Issue number. Remove them before
+interpreting the rest. With `--merge`, land the Pull Request after creating it
+(step 13). Without it, stop at Pull Request creation. `--ignore-checks` only means
+something together with `--merge`: it is passed to `pr-land` unchanged (for repositories
+where Actions cannot run); alone it is ignored and reported as such.
+
+# Repository instructions
 
 Follow all repository-specific instructions in:
 
@@ -35,8 +39,8 @@ Follow all repository-specific instructions in:
 - Never weaken tests or validation merely to make the change pass.
 - Never modify the default-branch checkout directly.
 - Never merge the Pull Request, unless `--merge` was requested (step 13).
-- Never force-push unless the repository explicitly requires it and the user has explicitly authorized it.
-- All GitHub operations (reading, searching, and creating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. If `gh` is unavailable or not authenticated, stop and report instead of falling back.
+- Never force-push.
+- All GitHub operations (reading, searching, and creating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. Before the first `gh` call, run `gh auth status`; if `gh` is unavailable or not authenticated, stop and report instead of falling back.
 
 # 1. Read the Issue
 
@@ -262,7 +266,8 @@ if nothing in the repository fits, add none.
 Only with `--merge`. Without it, stop here and do not merge.
 
 Follow the workflow in `~/.claude/skills/pr-land/SKILL.md`. Read it by path; `pr-land`
-is `disable-model-invocation: true` and cannot be selected as a skill from here.
+is `disable-model-invocation: true` and cannot be selected as a skill from here. Pass
+`--ignore-checks` on when it was given.
 
 If `pr-land` stops (draft, conflict, failing checks, `CHANGES_REQUESTED`, `BLOCKED`),
 report the stop condition. Do not override it.

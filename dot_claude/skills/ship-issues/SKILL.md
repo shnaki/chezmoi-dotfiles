@@ -1,7 +1,7 @@
 ---
 name: ship-issues
 description: "Orchestrate implementation of multiple existing GitHub Issues by analyzing dependencies, planning safe parallel execution, and delegating each Issue to an isolated worker that creates exactly one Pull Request."
-argument-hint: "[issue-numbers...] [--merge] [--dry-run] [--resume]"
+argument-hint: "[issue-numbers...] [--merge] [--ignore-checks] [--dry-run] [--resume] [--no-merge]"
 disable-model-invocation: true
 ---
 
@@ -76,6 +76,13 @@ Merging needs a repository where the user can merge without another person's app
 Where branch protection requires a review, every Pull Request stays `BLOCKED` and
 `pr-land` records each one as `PR created, not merged`; that is expected, not a failure.
 
+### `--ignore-checks`
+
+Only meaningful with `--merge`: passed to `pr-land` unchanged, so failing checks do not
+stop a merge. For repositories where GitHub Actions cannot run (the account is out of
+Actions minutes, or Actions is disabled). Without `--merge` it is ignored and reported
+as such. It does not lift a required check; `pr-land` still stops on `BLOCKED`.
+
 ### `--dry-run`
 
 Stop after the execution plan (step 6). Write the state file with the plan and a `DONE`
@@ -90,6 +97,12 @@ Continue an interrupted run instead of starting a new one (see below). Issue num
 may be omitted; they come from the state file. Options given on the command line are
 added to the options recorded in the state file (so `--resume --merge` turns merging on
 for the remaining waves); write the combined set back to the file.
+
+### `--no-merge`
+
+Only with `--resume`: remove `--merge` (and `--ignore-checks`) from the recorded
+options, so the remaining waves stop at Pull Request creation. Without `--resume` it
+does nothing.
 
 # Progress state
 
@@ -371,14 +384,18 @@ waves working against a base branch that already contains the earlier work.
 
 For each Pull Request, follow the workflow in `~/.claude/skills/pr-land/SKILL.md`.
 Read it by path; `pr-land` is `disable-model-invocation: true` and cannot be selected
-as a skill from here.
+as a skill from here. Pass `--ignore-checks` on when it was given.
 
 - one Pull Request at a time, in an order that respects the dependencies found in step 5
 - `pr-land` stops on a red light (draft, conflict, failing checks, `CHANGES_REQUESTED`,
   `BLOCKED` by branch protection after the checks are green). When it stops, record the
   Issue as `PR created, not merged (<reason>)` and continue with the remaining Pull
-  Requests. Do not override the stop condition.
-- do not fix failing checks or review findings here. That is `pr-fix`, run separately.
+  Requests. Do not override the stop condition. When `pr-land` reports the failing
+  checks as billing failures (Actions minutes exhausted), record
+  `PR created, not merged (checks failed: billing)` and name
+  `/ship-issues --resume --ignore-checks` in the final response.
+- do not fix failing checks or review findings here. That is `pr-fix`, run separately
+  (`ci-review` first when it is not obvious why a check fails).
 - update the state file after each merge
 
 Run `pr-land`'s local cleanup once per wave rather than after every single merge when

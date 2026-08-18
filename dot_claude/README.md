@@ -140,15 +140,23 @@ Import が上書きするため維持できません。
 
 - 許可: `gh auth status` / `gh repo view` / `gh pr list|view|diff|checks|status` /
   `gh issue list|view|status` / `gh label list` / `gh release list|view` /
-  `gh run view`（`pr-fix` が失敗した checks のログを読む）/ `gh search issues|prs`
-- 許可しない: `gh api`（GET も POST も同じ入口で区別できない）、`create` / `edit` /
-  `close` / `merge` / `comment` / `review` / `release create` /
-  `label create|edit|delete` などの書き込み系。これらは都度確認のまま
+  `gh run list|view`（`ci-review` / `pr-fix` が失敗した checks のログと base 側の履歴を
+  読む）/ `gh workflow list`（Actions が無効か workflow が無いかを見る）/
+  `gh search issues|prs`
+- 許可しない: `gh api`（GET も POST も同じ入口で区別できない。唯一の例外は `pr-fix` /
+  `pr-respond` がインラインのレビューコメントを GET する箇所で、毎回確認が入る前提）、
+  `create` / `edit` / `close` / `merge` / `comment` / `review` / `release create` /
+  `label create|edit|delete` / `run rerun|cancel` などの書き込み系。これらは都度確認のまま
 
 `git commit` も許可に入れています。ローカルに閉じていて取り消せるうえ、`cm` や
 `pr-ready` など多くのスキルが必ず通る工程のためです。auto mode の分類器が
 `git commit` を弾いて手が止まることがあり、その回避も兼ねています。`git push` と
 ブランチ削除は remote に出るため許可していません。
+
+スクリプトは `sh ~/.claude/scripts/work-status.sh` だけ許可しています。読み取り専用で、
+`/work-status` が毎回プロンプトになるのを避けるためです。`worktree-sweep.sh`（削除）と
+`label-sync.sh`（GitHub への書き込み）は都度確認のままです。スクリプト内部の `gh` は
+1 本の Bash コマンドとして判定されるので、`gh` 側の許可は届きません。
 
 `enabledPlugins` の `github@claude-plugins-official`（GitHub MCP）は対話用に残していますが、
 スキルからは使いません。MCP 側のツールは `permissions.allow` に入れていないので、
@@ -290,21 +298,26 @@ next / reason）、`state` と `srow`（`DONE` の無い run ファイルの見�
 | git が追跡していない worktree ディレクトリ | `/worktree-sweep` |
 | worktree lock の pid が生きている／pid の無い lock | `wait` |
 | PR が draft | `wait` |
-| `CONFLICTING` / `DIRTY`、checks 失敗、`CHANGES_REQUESTED` | `/pr-fix N` |
-| checks 実行中、mergeable 未計算 | `wait` |
+| `CONFLICTING` / `DIRTY` | `/pr-fix N` |
+| checks 失敗 | `/ci-review N`（billing / flaky / pr-caused を切り分けてから `/pr-fix N --checks-only` か `/pr-land N --ignore-checks`） |
+| `CHANGES_REQUESTED` | `/pr-fix N` |
+| checks 実行中、mergeable 未計算 | `wait`（pending が続くなら Actions 無効か無料枠切れの可能性を reason に出す） |
 | `APPROVED` で checks が緑か無し | `/pr-land N` |
-| `REVIEW_REQUIRED`、または未レビューで checks が緑か無し | `/pr-review N` |
-| `BLOCKED` | `wait` |
+| `REVIEW_REQUIRED` | `/pr-review N` |
+| `BLOCKED` で未レビュー | `wait`（merge queue や required check） |
+| 未レビューで checks が緑か無し | `/pr-review N` |
 | PR 無し、worktree に未コミット変更、直近 60 分に更新 | `wait` |
 | PR 無し、未コミット変更、run ファイルに載っている | `/ship-issues --resume` |
 | PR 無し、未コミット変更 | `/pr-ready (in <worktree>)` |
 | PR 無し、base より先のコミットあり、run ファイルに載っている | `/ship-issues --resume` |
-| PR 無し、base より先のコミットあり | `/pr-ready` |
+| PR 無し、base より先のコミットあり | `/pr-ready (on <branch>)` |
 | PR 無し、空の worktree（直近更新あり／なし） | `wait` ／ `/worktree-sweep` |
 | ブランチが base にマージ済み、または upstream が消えた | `/worktree-sweep` |
 | run ファイルの Issue にマージ済み PR がある | `-`（完了。ファイルに `DONE` が無いだけ） |
 | run ファイルの Issue にローカルにも GitHub にも痕跡が無い | `/ship-issues --resume` |
 
+- 「checks が無し」（`statusCheckRollup` が空）は Actions が無効か workflow の無いリポジトリで、
+  正常系として扱う。`wait` にも `/ci-review` にもならない
 - 「先のコミット」は `origin/<base>` と ローカル `<base>` の両方に無いコミットで数える。
   未 push の main から切ったブランチが「PR の無い作業」に見えないようにするため。
   main 自体が未 push なら `note` で知らせる

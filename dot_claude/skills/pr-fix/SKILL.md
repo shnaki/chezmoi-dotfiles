@@ -1,7 +1,7 @@
 ---
 name: pr-fix
 description: "Apply review findings, failing checks, and base-branch conflicts to an existing Pull Request branch: decide which findings to accept, fix them, verify, commit, and push without merging."
-argument-hint: "[pr-number] [findings...]"
+argument-hint: "[pr-number] [--checks-only] [findings...]"
 disable-model-invocation: true
 ---
 
@@ -12,7 +12,7 @@ checks and conflicts with the base branch.
 This skill modifies the Pull Request branch. It does not merge, and it does not post
 anything to GitHub.
 
-All GitHub operations (reading, searching, and updating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. If `gh` is unavailable or not authenticated, stop and report instead of falling back.
+All GitHub operations (reading, searching, and updating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. Before the first `gh` call, run `gh auth status`; if `gh` is unavailable or not authenticated, stop and report instead of falling back.
 
 # Core rules
 
@@ -28,7 +28,15 @@ All GitHub operations (reading, searching, and updating Issues and Pull Requests
 
 # 1. Resolve the Pull Request number
 
-Normalize the first token of `$ARGUMENTS` into a plain number:
+`--checks-only` is an option, not a Pull Request number. Remove it before interpreting
+the rest. With it, only what GitHub reports against the branch is a finding: a
+`ci-review` classification from this conversation (source 2b), base-branch conflicts
+(source 4), and failing checks (source 5). Review findings (sources 1, 2a, and 3) are
+not collected, even when they exist; leave them for a later plain `/pr-fix`. When
+free-form text was also given, say in the report that it was ignored because of
+`--checks-only`.
+
+Normalize the first token of what remains into a plain number:
 
 - `82`, `#82`, and a full Pull Request URL all mean Pull Request 82
 - strip any leading `#` so the number is never interpolated as `##82`
@@ -38,12 +46,28 @@ Everything after that token is free-form finding text from the user.
 If no number is given, resolve the Pull Request for the current branch
 (`gh pr view --json number`). If that finds nothing, stop and report.
 
+Then confirm the Pull Request can still take commits:
+
+```bash
+gh pr view <N> --json state,isDraft
+```
+
+If `state` is not `OPEN` (merged or closed), stop and report; there is no branch to fix.
+A draft is fine.
+
 # 2. Collect the findings
 
 Gather findings from these sources, in order:
 
 1. the free-form text remaining in `$ARGUMENTS`
-2. a `pr-review` result produced earlier in this same conversation
+2. results produced earlier in this same conversation:
+   - 2a. a `pr-review` result: its findings, by severity
+   - 2b. a `ci-review` result: every `pr-caused` row is a finding. Rows classified
+     `pre-existing`, `flaky`, `infrastructure` (including `billing`), or
+     `ci-definition` are not findings to fix: carry them into the report as declined
+     with `ci-review`'s evidence, and do not re-investigate them in source 5. Rows
+     classified `needs investigation` carry no verdict: handle those checks in source 5
+     as if `ci-review` had not seen them
 3. review state on GitHub:
 
 ```bash
@@ -56,10 +80,13 @@ findings like a human review. For inline review comments, read them with a GET r
 only:
 
 ```bash
-gh api repos/<owner>/<repo>/pulls/<N>/comments
+gh api "repos/$(gh repo view --json nameWithOwner -q .nameWithOwner)/pulls/<N>/comments" --paginate
 ```
 
-Never use `gh api` with a method that writes.
+This is the one `gh api` call in these skills, because `gh` has no other way to list
+inline review comments. It is not in the permission allow-list, so it prompts every
+time; skip it when the user declines and say so. Never use `gh api` with a method that
+writes.
 
 4. conflicts with the base branch:
 
@@ -78,12 +105,26 @@ or the protection rule says so); otherwise note it and leave it.
 gh pr checks <N>
 ```
 
+Read its output, not its exit code (1 when a check failed, 8 while pending, 1 with `No
+checks reported on the '<branch>' branch` when there are none). `No checks reported`
+means Actions is disabled or has no workflow for this event: there is nothing to fix
+from this source.
+
 Every failing check is a finding. Read the failing run's log with
 `gh run view <run-id> --log-failed` (the run id is in the check's URL) before deciding
-whether the failure is caused by this Pull Request.
+whether the failure is caused by this Pull Request. `log not found` means the job never
+ran; `gh run view <run-id>` then shows why in ANNOTATIONS. `The job was not started
+because recent account payments have failed or your spending limit needs to be
+increased` is a billing failure (the account is out of Actions minutes): decline it, it
+says nothing about the code, and name `/pr-land <N> --ignore-checks` in the report as
+the way to land the Pull Request while Actions cannot run. When a `ci-review` result
+from source 2b already classified the check, use that classification instead of reading
+the log again. When the cause is unclear and there are several failing checks,
+`/ci-review <N>` first is the cheaper path; this skill only needs to know which
+failures are the Pull Request's own.
 
-If all five sources are empty, stop and report that there is nothing to fix. Do not
-invent work.
+If all sources are empty (or, with `--checks-only`, sources 2b, 4, and 5), stop and
+report that there is nothing to fix. Do not invent work.
 
 List the collected findings before changing anything, so the set being acted on is
 explicit.
@@ -160,7 +201,11 @@ resolving them by hand. Verification (step 7) runs against the merged result.
 
 For a failing check, fix it only when the log shows the failure comes from this Pull
 Request. A failure that also happens on the base branch is pre-existing: decline it,
-say so in the report, and do not modify unrelated code to make the check green.
+say so in the report, and do not modify unrelated code to make the check green. A
+`ci-review` classification, when there is one, settles this: fix `pr-caused`, decline
+the rest with its evidence (a `billing` failure with the `/pr-land <N> --ignore-checks`
+note). Do not re-run a flaky check from here (`gh run rerun` is a GitHub write); name it
+in the report so the user can.
 
 # 7. Verify
 
@@ -205,17 +250,15 @@ it.
 
 Push to the existing remote branch. Do not force-push. Do not push to the default branch.
 
-# 10. Report
-
-Do not merge. Do not post to GitHub.
-
 # Final response
 
-Return:
+Do not merge. Do not post to GitHub. Return:
 
 - Pull Request number and URL
 - findings fixed, each with what changed
-- findings declined, each with the reason
+- findings declined, each with the reason (a billing check failure names
+  `/pr-land <N> --ignore-checks`)
+- free-form findings ignored because of `--checks-only`, if any
 - conflicts resolved (files) and checks addressed, if any
 - verification run and its result, including pre-existing failures
 - the pushed branch and commits

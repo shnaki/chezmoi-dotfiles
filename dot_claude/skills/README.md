@@ -7,13 +7,14 @@
 | [`cm`](#cm) | Conventional Commits でコミットする | コミットメッセージまたは変更の説明 | `/cm`（モデルからの自動起動も可） |
 | [`triage-notes`](#triage-notes) | メモを調査して GitHub Issue を起票する | `--dry-run`（任意）+ メモのファイルまたはテキスト | `/triage-notes` のみ |
 | [`issue-refine`](#issue-refine) | 既存 Issue を調査して実装可能な本文に書き換える | Issue 番号の並び + `--dry-run` / `--split`（任意） | `/issue-refine` のみ |
-| [`ship-issues`](#ship-issues) | 既存 Issue 群を並列ワーカーに割って PR 化する | Issue 番号の並び + `--merge` / `--dry-run` / `--resume`（任意） | `/ship-issues` のみ |
-| [`issue-pr`](#issue-pr) | Issue 1 件を PR 1 件として実装する | Issue 番号 + `--merge`（任意） | `/issue-pr` のみ |
-| [`pr-ready`](#pr-ready) | 現在ブランチの作業を diff 確認 → 検証 → コミット → PR にする | Issue 番号 + `--merge`（任意） | `/pr-ready` のみ |
-| [`ship-notes`](#ship-notes) | メモ → Issue → PR を通しで回す | `--merge`（任意）+ メモのファイルまたはテキスト | `/ship-notes` のみ |
+| [`ship-issues`](#ship-issues) | 既存 Issue 群を並列ワーカーに割って PR 化する | Issue 番号の並び + `--merge` / `--ignore-checks` / `--dry-run` / `--resume` / `--no-merge`（任意） | `/ship-issues` のみ |
+| [`issue-pr`](#issue-pr) | Issue 1 件を PR 1 件として実装する | Issue 番号 + `--merge` / `--ignore-checks`（任意） | `/issue-pr` のみ |
+| [`pr-ready`](#pr-ready) | 現在ブランチの作業を diff 確認 → 検証 → コミット → PR にする | Issue 番号 + `--merge` / `--ignore-checks`（任意） | `/pr-ready` のみ |
+| [`ship-notes`](#ship-notes) | メモ → Issue → PR を通しで回す | `--merge` / `--ignore-checks`（任意）+ メモのファイルまたはテキスト | `/ship-notes` のみ |
 | [`pr-review`](#pr-review) | PR を独立した立場でレビューする | PR 番号 + `--post`（任意） | `/pr-review` のみ |
-| [`pr-fix`](#pr-fix) | レビュー指摘・conflict・checks 失敗を PR ブランチに反映して push する | PR 番号 + 指摘（任意） | `/pr-fix` のみ |
-| [`pr-land`](#pr-land) | 準備の整った PR をマージして後始末する | PR 番号 + `--keep-branch`（任意） | `/pr-land` のみ |
+| [`ci-review`](#ci-review) | 落ちた CI のログを読み、pr-caused / pre-existing / flaky / infrastructure（billing 含む）/ ci-definition / needs investigation に分類する（読むだけ） | PR 番号 / `--run <id>` / `--branch <name>` + `--workflow` / `-R owner/repo`（任意） | `/ci-review` のみ |
+| [`pr-fix`](#pr-fix) | レビュー指摘・conflict・checks 失敗を PR ブランチに反映して push する | PR 番号 + `--checks-only` / 指摘（任意） | `/pr-fix` のみ |
+| [`pr-land`](#pr-land) | 準備の整った PR をマージして後始末する | PR 番号 + `--keep-branch` / `--ignore-checks`（任意） | `/pr-land` のみ |
 | [`worktree-sweep`](#worktree-sweep) | 残った worktree と不要ブランチを掃除する | スクリプトへ渡すオプション: `--dry-run` / `--recursive` / `--no-fetch` / `--force` / PATH（任意） | `/worktree-sweep` のみ |
 | [`label-sync`](#label-sync) | 既定のラベルセットをリポジトリに流し込む | `--dry-run` / `--prune` / `-R owner/repo`（任意） | `/label-sync` のみ |
 | [`label-apply`](#label-apply) | 既存の Issue / PR にラベルを付け直す | `--dry-run` / `--issues` / `--prs` / `--all` / `--limit N` / 番号（任意） | `/label-apply` のみ |
@@ -22,7 +23,7 @@
 | [`handoff`](#handoff) | 作業の引継ぎ文書を書く / 読んで再開する | `--resume [file]`（任意）+ メモ | `/handoff` のみ |
 | [`release-cut`](#release-cut) | 前回リリース以降のマージ済み PR から版と release notes を起こし、GitHub release を作る | `--dry-run` / `--tag <version>` / `--draft` / `-R owner/repo`（任意） | `/release-cut` のみ |
 
-`cm` 以外の 16 は `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
+`cm` 以外の 17 は `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
 起動しません。`cm` だけは `user-invocable: true` で、コミット時にモデルからも選ばれます。
 
 定義同士の整合（frontmatter、argument-hint とこの表、`~/.claude/...` のパス参照、SKILL.md が
@@ -44,8 +45,15 @@ Issue ───/issue-pr───> PR                 （ship-issues のワー�
 PR ─/pr-review─> 指摘 ─/pr-fix─> 修正を push ─/pr-land─> マージ + 掃除
      （--post で PR コメントに残す）（conflict / checks 失敗も pr-fix が直す）
 
+落ちた CI ─/ci-review─> check ごとに pr-caused / pre-existing / flaky / infrastructure / ci-definition / needs investigation（読むだけ）
+                        ──pr-caused──> /pr-fix N --checks-only
+                        ──pre-existing / ci-definition──> /triage-notes で Issue 化
+                        ──flaky──> gh run rerun <id> --failed の案（実行はしない）
+                        ──infrastructure (billing)──> /pr-land N --ignore-checks の案（Actions が使えないとき）
+
 /ship-notes = /triage-notes → /ship-issues を繋ぐだけ
 /ship-issues --merge / /issue-pr --merge / /pr-ready --merge ──> PR 作成後に /pr-land を続けて回す
+                                                                （--ignore-checks はそのまま pr-land へ）
 /triage-notes --dry-run / /ship-issues --dry-run ──> 起票 / ウェーブ計画だけ見て止まる
 
 マージ済み PR 群 ─/release-cut─> 版の提案 + release notes ─> gh release create（--dry-run で提案だけ）
@@ -59,7 +67,7 @@ PR ─/pr-review─> 指摘 ─/pr-fix─> 修正を push ─/pr-land─> マー
                                                         既存ラベルから選んで付ける（作らない）
 
 /work-status ──> いま何が動いていて次に何を叩くかを一覧（読むだけ）
-                 ──> /pr-fix /pr-review /pr-land /pr-ready /ship-issues --resume /worktree-sweep へ案内
+                 ──> /pr-fix /ci-review /pr-review /pr-land /pr-ready /ship-issues --resume /worktree-sweep へ案内
 
 open Issue 群 ─/backlog-review─> ready / in progress / blocked / duplicate … に分類（読むだけ）
                                  ──ready の番号──> /ship-issues、ラベルの食い違い──> /label-apply
@@ -83,9 +91,15 @@ open Issue 群 ─/backlog-review─> ready / in progress / blocked / duplicate 
 - `pr-review` → `pr-fix` → `pr-land` が PR 作成後の一直線です。`pr-review` は読むだけ
   （`--post` で結果を PR コメントに残せる。自分の PR には approve できないので COMMENT 固定）、
   `pr-fix` は直して push するだけ、マージするのは `pr-land` だけ、と工程を分けています。
-  `work-status` が conflict / checks 失敗を `/pr-fix N` に案内するので、`pr-fix` はレビュー指摘
-  だけでなく base との conflict 解消（`git merge origin/<base>`、rebase はしない）と CI 失敗の
-  修正も引き受けます。
+  `work-status` が conflict / `CHANGES_REQUESTED` を `/pr-fix N` に案内するので、`pr-fix` は
+  レビュー指摘だけでなく base との conflict 解消（`git merge origin/<base>`、rebase はしない）と
+  CI 失敗の修正も引き受けます。
+- CI が落ちた原因を先に切り分けたいときは `/ci-review`。PR 番号のほか `--run <id>` /
+  `--branch <name>` で main の失敗や scheduled workflow も対象にでき、落ちた check ごとに
+  pr-caused / pre-existing / flaky / infrastructure / ci-definition / needs investigation のどれかを
+  付けて次のコマンドを出します。読むだけで、rerun もしません。同じ会話で続けて
+  `/pr-fix N --checks-only` を叩くと、`pr-fix` はその分類を引き継いで pr-caused だけ直します
+  （レビュー指摘は集めない）。`work-status` は checks 失敗をまず `/ci-review N` に案内します。
 - `pr-land` は checks を待ってから `mergeStateStatus` を判定します。required checks が走っている
   間は GitHub が `BLOCKED` を返すため、先に判定すると PR 作成直後に必ず止まるからです。checks が
   緑でも `BLOCKED` なら branch protection（required review）で、承認は GitHub 側の作業です。
@@ -118,6 +132,27 @@ Issue の設計と実装は必ず別フェーズに分け、**1 Issue = 1 PR、1
 **PR をマージするのは `pr-land` だけです。** `ship-issues` と `issue-pr` は `--merge` を
 付けたときに `pr-land` のワークフローを続けて回すだけで、自前ではマージしません。
 ワーカーは `--merge` の有無にかかわらずマージしません。
+
+## Actions が使えないリポジトリ
+
+private リポジトリで GitHub Actions の無料枠が尽きると、以降の run は job が起動せず全て失敗に
+なります（annotation は `The job was not started because recent account payments have failed
+or your spending limit needs to be increased`、`gh run view --log-failed` は `log not found`、
+`gh pr checks` は普通の `FAILURE`）。リポジトリ側で Actions を無効にすると checks は 1 件も
+付かず、`gh pr checks` は `No checks reported on the '<branch>' branch` を exit 1 で返します。
+どちらもコードの良し悪しとは無関係なので、checks に依存する工程は次のように扱います。
+
+| 状態 | `ci-review` | `pr-fix` | `pr-land` | `work-status` |
+| --- | --- | --- | --- | --- |
+| Actions 無効 / workflow 無し（checks 0 件） | `no checks: Actions disabled or no workflows` と報告して終了 | source 5 が空 | `checks: none` と記録して続行 | `checks` 列 `none`。`wait` にも `/ci-review` にもならない |
+| 無料枠切れ（全 job が起動前に失敗） | `infrastructure` に `billing: job not started (spending limit)` の evidence を付け、`/pr-land N --ignore-checks` を案内 | billing 行を decline し `/pr-land N --ignore-checks` を報告に載せる | 既定は止まり `checks failed: billing` と報告。`--ignore-checks` を付けたときだけ checks を無視してマージ | `checks` 列 `fail` → `/ci-review N` |
+
+`--ignore-checks` は `pr-land` の他、`--merge` と一緒に `issue-pr` / `pr-ready` / `ship-issues` /
+`ship-notes` に付けられ、そのまま `pr-land` に渡ります。required checks が失敗しているときは
+GitHub 側がマージを拒む（`BLOCKED`）ので、このオプションで branch protection は越えられません。
+自動判定で通すことはせず、billing 起因かどうかは `pr-land` の報告（または `/ci-review`）で
+確かめてから人が付けます。`gh pr checks` の exit code（失敗 1 / pending 8 / checks 無し 1）は
+結果を表すだけで、どのスキルもエラー扱いしません。
 
 ## スキル同士の呼び出し方
 
@@ -157,7 +192,7 @@ GitHub MCP）はスキルからは使いません。対話中に Issue を検索
 
 | スキル | Codex での扱い |
 | --- | --- |
-| `cm` `triage-notes` `issue-refine` `issue-pr` `pr-ready` `pr-review` `pr-fix` `pr-land` `label-apply` `backlog-review` `handoff` `release-cut` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` / `pr-ready --merge` の `pr-land` 参照と、`label-apply` 系の `labeling-rules.md` 参照は `~/.claude` のパスなので解決しない。`handoff` の `~/.claude/handoff/` は単なるディレクトリなので Codex からも読み書きできる |
+| `cm` `triage-notes` `issue-refine` `issue-pr` `pr-ready` `pr-review` `ci-review` `pr-fix` `pr-land` `label-apply` `backlog-review` `handoff` `release-cut` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` / `pr-ready --merge` の `pr-land` 参照と、`label-apply` 系の `labeling-rules.md` 参照は `~/.claude` のパスなので解決しない。`handoff` の `~/.claude/handoff/` は単なるディレクトリなので Codex からも読み書きできる |
 | `worktree-sweep` `label-sync` `work-status` | `sh` / `git` / `gh` にしか依存しない。`~/.claude/scripts/*.sh` は Import の対象外なので、Codex 側では実体が要る |
 | `ship-issues` `ship-notes` | Claude Code の Agent tool と `isolation: "worktree"` が前提。Codex には対応機能が無いため動かない |
 
@@ -264,7 +299,9 @@ Codex が読む frontmatter は `name` と `description` だけです。
 1 件ずつマージしてから次のウェーブへ進みます。`pr-land` が止めた PR は
 `PR created, not merged (理由)` として記録し、残りは続行します。ワーカーはマージしません。
 required review のあるリポジトリでは checks が緑でも `BLOCKED` で全件止まるので、
-`--merge` は自分でマージできるリポジトリ向けです。
+`--merge` は自分でマージできるリポジトリ向けです。`--ignore-checks` は `pr-land` にそのまま
+渡します（Actions が使えないリポジトリ向け。`--merge` 無しでは無意味）。`--resume --no-merge`
+で記録済みの `--merge` を外せます。
 
 `--dry-run` を付けると、分類とウェーブ計画（step 6）まで進めて state file を書き、
 ワーカーを起こさずに終わります。数時間走る前に計画だけ確認する用途です。
@@ -297,7 +334,7 @@ Issue 番号 1 件を受け取り、PR 1 件として実装します。Issue が
   リポジトリに既にあるものから `--label` で付ける（[`labeling-rules.md`](label-apply/labeling-rules.md)）
 - 引数の `#31` / Issue URL は番号に正規化する（`##31` になるのを防ぐ）
 - force-push しない。マージしない。`--merge` を付けたときだけ、PR 作成後に `pr-land` の
-  手順でマージする
+  手順でマージする（`--ignore-checks` はそのまま `pr-land` へ渡す）
 
 ## pr-ready
 
@@ -318,22 +355,23 @@ Issue 番号 1 件を受け取り、PR 1 件として実装します。Issue が
   Summary / Why / Verification / Issue の構成。`gh pr create` で作る
 - type ラベルは `issue-pr` と同じ規則で、リポジトリに既にあるものから付ける
 - force-push しない。マージしない。`--merge` を付けたときだけ、PR 作成後に `pr-land` の
-  手順でマージする
+  手順でマージする（`--ignore-checks` はそのまま `pr-land` へ渡す）
 
 ## ship-notes
 
 メモから PR までを通しで回します。実体は `triage-notes` と `ship-issues` を繋ぐだけの
-薄い合成で、固有のロジックは持ちません。
+薄い合成で、固有のロジックは持ちません。両者の SKILL.md をパスで読んで従います。
 
 1. メモを `triage-notes` のワークフローで triage する
 2. Issue を起票する
 3. **新しく起票された actionable な Issue 番号だけ**を集める
-4. それらを `ship-issues` のワークフローで処理する
-5. 両者の結果を合わせて返す
+4. それらを `ship-issues` のワークフローで処理する（`--merge` / `--ignore-checks` を透過）
+5. 両者の結果と `ship-issues` の state file パスを合わせて返す
 
 重複・obsolete・アクション不要と判断したメモは実装フェーズに渡しません。
 triage フェーズでは実装せず、実装開始後に Issue 境界を都合よく書き換えることもしません。
-PR はマージしません。
+`--merge` 無しでは PR をマージしません。`--dry-run` は受けません（`/triage-notes --dry-run` /
+`/ship-issues --dry-run` を使う）。中断した run の再開は `/ship-issues --resume` です。
 
 ## pr-review
 
@@ -355,15 +393,59 @@ push もマージもしません。
   自分の PR には APPROVE / REQUEST_CHANGES を出せないので COMMENT 固定。別セッションの
   `pr-fix` が拾える。`reviewDecision` は変わらないので `work-status` は `/pr-review N` を出し続ける
 
+## ci-review
+
+落ちた GitHub Actions の check を 1 つずつ読んで、ちょうど 1 つの分類を付けます。**読むだけ**で、
+rerun も cancel もコメントも commit もしません。「なぜ落ちたか」を切り分ける工程で、
+直すのは `pr-fix`、Issue にするのは `triage-notes` の仕事です。
+
+- 対象は PR 番号（既定。無指定ならカレントブランチの PR、それも無ければカレントブランチ）、
+  `--run <run-id>` で run 1 件、`--branch <name>` でそのブランチの直近失敗 run（main の失敗や
+  scheduled workflow）。`--workflow <name>` で絞り、`-R owner/repo` は全 `gh` 呼び出しに渡す
+- 取得は `gh pr view --json` / `gh pr checks --json` / `gh run list` / `gh run view --json` /
+  `gh run view --log-failed`（無ければ `gh run view` の ANNOTATIONS）/ `gh workflow list`。
+  `gh api` は使わない。ログは丸ごと読まず、失敗 step の末尾と `error` / `##[error]` /
+  `exit code` の行から「失敗した step・コマンド・最初のエラー・名指しされたファイルやテスト」を抜く。
+  checks が 1 件も無ければ「Actions 無効か workflow 無し」と報告して終了
+- base 側（PR なら `baseRefName`、それ以外は default branch）の同 workflow の直近 run を
+  `gh run list --branch <base> --workflow <w>` で取り、base でも同じ step・同じエラーで落ちて
+  いるかを見る。head 側の同 workflow の run も取り、同じ SHA で success した run が flaky の根拠。
+  対象が default branch 自身なら直近の緑 run との間のコミットを候補にする。PR のときは失敗 step の
+  対象が PR の変更ファイル（100 件超は `gh pr diff --name-only`）に含まれるかも見る
+- 分類は優先順に判定し、先に当たったものを採用する:
+  infrastructure（runner 起動失敗 / secrets 未設定 / rate limit / ネットワーク / **billing**
+  （無料枠切れ。annotation + `log not found` + steps 空）。リポジトリ自身のコマンドに入る前に
+  落ちている）→ ci-definition（`Invalid workflow file`、action が解決しない等。PR がその YAML を
+  変えていれば pr-caused）→ flaky（同一 SHA の別 run が通った、または base が緑で timeout /
+  外部サービス起因。「無関係に見える」だけでは flaky にしない）→ pre-existing（base の直近 run が
+  同じ step・同じエラー）→ pr-caused（base は緑で、エラーが PR の変更を名指し）→
+  needs investigation（決められない。何を見れば決まるかを書く）
+- 出力は対象と件数 → 表（check / run / class / evidence / note）→ 行ごとの要点ログ数行 →
+  次に叩くコマンド案（pr-caused の `/pr-fix <N> --checks-only`、pre-existing / ci-definition の
+  `/triage-notes "<要約>"`、flaky の `gh run rerun <id> --failed`、infrastructure は人が見る箇所
+  （billing なら Billing & plans と `/pr-land <N> --ignore-checks`）、needs investigation は次に見る
+  1 点）。案は出すだけで実行しない。末尾に「Nothing was changed on GitHub.」を必ず書く
+- `--run` / `--branch` で default branch の失敗が pr-caused でも、default branch は直さない。
+  `/triage-notes` → `/issue-pr` へ案内する
+
 ## pr-fix
 
 `pr-review` の指摘、base との conflict、checks の失敗を PR ブランチに反映して push します。
 **マージしません**。GitHub へのコメント投稿もしません。
 
-- 指摘の入力元は、引数の自由記述 → 同じ会話の `pr-review` 出力 → GitHub 上のレビュー
-  （`gh pr view --comments`。`pr-review --post` のコメントも含む。インラインは `gh api` の GET）
-  → `mergeable=CONFLICTING` / `DIRTY`（`BEHIND` は up-to-date 必須のときだけ）→
-  `gh pr checks` の失敗（`gh run view --log-failed` でログを読む）の順。5 つとも空なら止まる
+- 先に `gh pr view --json state` を読み、open でない PR には手を出さない
+- 指摘の入力元は、(1) 引数の自由記述 → (2a) 同じ会話の `pr-review` 出力 / (2b) 同じ会話の
+  `ci-review` 出力 → (3) GitHub 上のレビュー（`gh pr view --comments`。`pr-review --post` の
+  コメントも含む。インラインは `gh api ... --paginate` の GET で、allow 外なので毎回確認）→
+  (4) `mergeable=CONFLICTING` / `DIRTY`（`BEHIND` は up-to-date 必須のときだけ）→ (5) `gh pr checks`
+  の失敗（`gh run view --log-failed` でログを読む。`log not found` なら ANNOTATIONS）の順。
+  全部空なら止まる
+- `--checks-only` を付けると 2b・4・5 だけを findings にし、レビュー指摘（1 / 2a / 3）は集めない。
+  同じ会話に `ci-review` の結果があれば、pr-caused の行だけ直し、pre-existing / flaky /
+  infrastructure（billing 含む）/ ci-definition の行はその根拠ごと decline として報告する
+  （ログを読み直さない）。needs investigation の行は自分でログを読んで判断する。billing の
+  decline には `/pr-land <N> --ignore-checks` を添える。flaky の rerun は `gh run rerun` が
+  GitHub への write なので自分では叩かず、報告に載せる
 - head ブランチが既に別 worktree（`ship-issues` のワーカーが残したもの）に checkout されて
   いればそこで直す。無ければ隔離 worktree（`pr-<N>`）で `gh pr checkout` する。
   default branch の checkout では直さない
@@ -379,24 +461,27 @@ push もマージもしません。
 準備の整った PR をマージし、後始末します。**スキルを叩いたこと自体がマージの承認**で、
 マージ前に再確認は取りません。ただし赤信号では必ず止まり、押し切りません。
 
-- 止める条件: open でない / draft / `CONFLICTING` / `CHANGES_REQUESTED` /
-  `gh pr checks` の失敗 / checks が緑になった後も `BLOCKED`（required review）/ `DIRTY` /
-  up-to-date 必須のリポジトリで `BEHIND` / 議論に未対応の反対意見。**直さずに止めて報告する**
-  （直すのは `pr-fix` の仕事）
-- 判定順は「即止まる条件 → `gh pr checks --watch` → 状態を読み直して `mergeStateStatus` を判定」。
-  required checks が走っている間は GitHub が `BLOCKED` を返し、push 直後は `mergeable` が
-  `UNKNOWN` になるため、checks の前に判定すると PR 作成直後に必ず止まる。`UNKNOWN` は
-  最大 1 分ほど読み直す
+- 止める条件: open でない / draft / `CHANGES_REQUESTED` / `gh pr checks` の失敗
+  （`--ignore-checks` 無し）/ checks が緑になった後も `BLOCKED`（required review か required
+  check）/ `DIRTY` / `CONFLICTING` / up-to-date 必須のリポジトリで `BEHIND` / `mergeable` が
+  1 分読み直しても `UNKNOWN` / 議論に未対応の反対意見。**直さずに止めて報告する**（直すのは
+  `pr-fix` の仕事。checks の失敗は 1 件 `gh run view` して billing 起因なら
+  `/pr-land <N> --ignore-checks`、それ以外は `/ci-review <N>` → `/pr-fix <N> --checks-only` を案内）
+- 判定順は「即止まる条件（state / draft / `CHANGES_REQUESTED`）→ `gh pr checks --watch` →
+  状態を読み直して `mergeable` / `mergeStateStatus` を判定」。required checks が走っている間は
+  GitHub が `BLOCKED` を返し、push 直後は `mergeable` が `UNKNOWN` になるため、checks の前に
+  判定すると PR 作成直後に必ず止まる。`UNKNOWN` は最大 1 分ほど読み直す。`gh pr checks` の
+  exit code はエラーではなく結果（失敗 1 / pending 8）。`No checks reported` は Actions 無効か
+  workflow 無しで、`checks: none` として続行。`--watch` がツールの timeout で切れたら
+  `--watch` 無しで読み直し、30 分で諦める
 - マージ方式はリポジトリの慣例に従い、不明なら `--squash`。squash では `--subject` / `--body`
   を `cm` の規約（`<type>(<scope>): <subject> (#N)`）で明示し、`gh` 既定の PR タイトル +
   コミット見出し一覧にしない。既定で `--delete-branch` を付けて remote ブランチを消す。
   残したいときだけ `--keep-branch` を付ける（ローカルの後始末には影響しない）
-- `gh` はローカルブランチ → remote ブランチの順に消すので、ローカルブランチが worktree で
-  checkout 中（`ship-issues --merge` の通常ケース）だとローカル削除で失敗して **remote が
-  残る**。マージ済みなら停止条件にせず、`git ls-remote --exit-code --heads origin <branch>`
-  で remote ブランチの有無を確かめ、残っていれば `git push origin --delete <branch>` で
-  消してから後始末へ進む（`gh api` は GET でも `permissions.allow` 外で毎回プロンプト、
-  `-X DELETE` は権限分類器にブロックされる）
+- `gh` はローカルブランチ → remote ブランチの順に消すので、worktree で checkout 中のブランチだと
+  ローカル削除で失敗して **remote が残る**。マージ済みなら停止条件にせず、`git ls-remote` で
+  確かめて `git push origin --delete <branch>` で消す（詳細は SKILL.md step 5）。fork からの
+  PR（`isCrossRepository`）では remote 削除に触らない
 - マージ後に紐づく Issue が閉じたか確認する。閉じていなければ報告のみ（手で閉じない）
 - 後始末は base branch へ切替 → `git fetch --prune` → `git pull --ff-only` →
   `worktree-sweep.sh`。カレントが agent worktree の中（`issue-pr --merge` / `pr-ready --merge`
@@ -496,9 +581,11 @@ push もマージもしません。
 - 対象は repo 全体。open PR（`gh pr list`）、agent worktree とローカルブランチ
   （`git worktree list` / `for-each-ref`）、`~/.claude/ship-issues/` の `DONE` が無い run を
   ブランチ名で結合し、1 単位 1 行にする
-- 各行の `next` は `/pr-fix` / `/pr-review` / `/pr-land` / `/pr-ready` /
-  `/ship-issues --resume` / `/worktree-sweep` / `wait` のどれか。判定表は
-  [../README.md](../README.md#進行中の作業を一覧する) とスクリプト冒頭のコメントにある
+- 各行の `next` は `/pr-fix` / `/ci-review` / `/pr-review` / `/pr-land` / `/pr-ready` /
+  `/ship-issues --resume` / `/worktree-sweep` / `wait` / `-`（完了）のどれか。判定表は
+  [../README.md](../README.md#進行中の作業を一覧する) とスクリプト冒頭のコメントにある。
+  checks 失敗は `/ci-review` に送る（billing / flaky を `pr-fix` に持ち込まないため）。表には
+  判断根拠の `checks` / `review` 列も出す
 - state file は「その Issue が ship-issues 由来か」「run の進み具合の主張」としてだけ読む。
   事実は git と gh の列で、食い違えば表が勝つ
 - Agent の生存はヒューリスティック。確定信号は worktree lock の pid が生きていることだけで、

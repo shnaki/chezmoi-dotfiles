@@ -37,14 +37,18 @@ columns before each type. Turn it into:
 - **Header** — from the `repo` record: repository, base, where it was invoked from
   (`main` or `worktree:<name>`), and the `fetch` / `gh` states.
 - **In flight** — one markdown table from the `row` records with the columns
-  Issue | PR | branch | worktree | agent | state | next | reason. Keep `next` verbatim.
-  Order: rows whose `next` is a command first, then `wait`, then `/worktree-sweep`,
-  then `-` (done). Omit the table when there are no rows.
+  Issue | PR | checks | review | branch | worktree | agent | state | next | reason.
+  `checks` (`pass` / `fail` / `pending` / `none` / `?`) and `review` are the facts the
+  `next` column was decided from; keep them so the reader can see why. `none` means the
+  Pull Request has no checks at all (Actions disabled or no workflows), which is normal
+  and never a reason to wait. Keep `next` verbatim. Order: rows whose `next` is a skill
+  command other than `/worktree-sweep` first, then `wait`, then `/worktree-sweep`, then
+  `-` (done). Omit the table when there are no rows.
 - **Unfinished ship-issues runs** — one entry per `state` record: file, started,
-  options, resolved/total. Add one line of progress read from that file's `srow`
-  records (the raw table rows) or, if they are not enough, from the file itself.
-  Label it as what the file claims. The table above is what git and GitHub actually
-  show; when they disagree, the table wins.
+  options, requested issues, repository, resolved/total. Add one line of progress read
+  from that file's `srow` records (the raw table rows) or, if they are not enough, from
+  the file itself. Label it as what the file claims. The table above is what git and
+  GitHub actually show; when they disagree, the table wins.
 - **Notes** — every `note` record, verbatim.
 - The `summary` record as the last line.
 
@@ -67,6 +71,6 @@ Always end with this, in the user's language:
 
 # 4. Do not act
 
-Do not run `/pr-fix`, `/pr-review`, `/pr-land`, `/ship-issues --resume`, `/pr-ready`,
-or the sweeper from here. Suggest; the user invokes them. If asked to "just do it",
+Do not run `/pr-fix`, `/ci-review`, `/pr-review`, `/pr-land`, `/ship-issues --resume`,
+`/pr-ready`, or the sweeper from here. Suggest; the user invokes them. If asked to "just do it",
 name the skill to invoke instead of doing the work in this context.

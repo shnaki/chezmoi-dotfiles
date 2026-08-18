@@ -5,8 +5,8 @@
 # Pull Requests on GitHub, agent worktrees under .claude/worktrees/, local branches, and
 # ship-issues run files under ~/.claude/ship-issues/. This script reads all four, joins
 # them by branch name, and prints one row per unit of work with a `next` column naming
-# the skill to invoke (/pr-fix, /pr-review, /pr-land, /ship-issues --resume, /pr-ready,
-# /worktree-sweep) or `wait`.
+# the skill to invoke (/pr-fix, /ci-review, /pr-review, /pr-land, /ship-issues --resume,
+# /pr-ready, /worktree-sweep), `wait`, or `-` (done).
 #
 # Read-only. The only side effect is `git fetch --prune`; --no-fetch disables it. Nothing
 # is merged, swept, or written, and none of the suggested commands are run.
@@ -22,14 +22,16 @@
 #    3 worktree lock without a pid                           -> wait
 #    4 PR draft                                              -> wait
 #    5 PR mergeable=CONFLICTING or mergeStateStatus=DIRTY    -> /pr-fix N
-#    6 PR checks failing                                     -> /pr-fix N
+#    6 PR checks failing                                     -> /ci-review N
+#      (classify first: a billing or flaky failure is not /pr-fix's job; checks are
+#       `none` when Actions is disabled, which never reaches this rule)
 #    7 PR reviewDecision=CHANGES_REQUESTED                   -> /pr-fix N
 #    8 PR checks pending                                     -> wait
 #    9 PR mergeable=UNKNOWN                                  -> wait
 #   10 PR APPROVED and checks green or none                  -> /pr-land N
 #   11 PR reviewDecision=REVIEW_REQUIRED                     -> /pr-review N
-#   12 PR not reviewed and checks green or none              -> /pr-review N
-#   13 PR mergeStateStatus=BLOCKED                           -> wait
+#   12 PR mergeStateStatus=BLOCKED, not reviewed             -> wait
+#   13 PR not reviewed and checks green or none              -> /pr-review N
 #   14 no PR, worktree dirty, touched recently               -> wait
 #   15 no PR, worktree dirty, stale, in a ship-issues run    -> /ship-issues --resume
 #   16 no PR, worktree dirty, stale                          -> /pr-ready (in <wt>)
@@ -463,11 +465,11 @@ decide_next() {
         elif [ "$d_mergeable" = CONFLICTING ] || [ "$d_mergestate" = DIRTY ]; then
             NEXT="/pr-fix $d_pr"; REASON="conflicts with base"
         elif [ "$d_checks" = fail ]; then
-            NEXT="/pr-fix $d_pr"; REASON="checks failing"
+            NEXT="/ci-review $d_pr"; REASON="checks failing; classify first (billing / flaky / pr-caused), then /pr-fix $d_pr --checks-only or /pr-land $d_pr --ignore-checks"
         elif [ "$d_review" = CHANGES_REQUESTED ]; then
             NEXT="/pr-fix $d_pr"; REASON="changes requested"
         elif [ "$d_checks" = pending ]; then
-            NEXT=wait; REASON="checks running (gh pr checks $d_pr --watch)"
+            NEXT=wait; REASON="checks running (gh pr checks $d_pr --watch); if they stay pending, Actions may be disabled or out of minutes: /ci-review $d_pr"
         elif [ "$d_mergeable" = UNKNOWN ]; then
             NEXT=wait; REASON="mergeability not computed yet; re-run"
         elif [ "$d_review" = APPROVED ]; then
@@ -475,10 +477,10 @@ decide_next() {
             [ "$d_mergestate" = BEHIND ] && REASON="$REASON; behind base, update first if protection requires"
         elif [ "$d_review" = REVIEW_REQUIRED ]; then
             NEXT="/pr-review $d_pr"; REASON="review required by branch protection; approval must come from GitHub"
+        elif [ "$d_mergestate" = BLOCKED ]; then
+            NEXT=wait; REASON="blocked by branch protection (merge queue or a required check); see gh pr view $d_pr"
         elif [ "$d_review" = NONE ]; then
             NEXT="/pr-review $d_pr"; REASON="not reviewed yet (or /pr-land $d_pr to skip review)"
-        elif [ "$d_mergestate" = BLOCKED ]; then
-            NEXT=wait; REASON="blocked by branch protection; see gh pr view $d_pr"
         else
             NEXT=wait; REASON="PR state $d_prstate; see gh pr view $d_pr"
         fi
