@@ -18,6 +18,9 @@
       "Bash(gh issue view:*)",
       "Bash(gh issue status:*)",
       "Bash(gh label list:*)",
+      "Bash(gh release list:*)",
+      "Bash(gh release view:*)",
+      "Bash(gh run view:*)",
       "Bash(gh search issues:*)",
       "Bash(gh search prs:*)",
       "Bash(git commit:*)"
