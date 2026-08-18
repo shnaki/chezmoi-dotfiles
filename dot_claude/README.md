@@ -344,7 +344,7 @@ run ファイルの書式は `ship-issues` 側で
 
 ## スキル定義の整合を検査する
 
-スキルは 18 本あり、frontmatter の形、`skills/README.md` の表、`~/.claude/skills/...` /
+スキルは 22 本あり、frontmatter の形、`skills/README.md` の表、`~/.claude/skills/...` /
 `~/.claude/scripts/...` のパス参照、「SKILL.md は英語で書く」という規則で互いに縛られて
 います。どれも機械が強制していないので、1 本を直すと別の場所が黙ってずれます。
 `scripts/skill-lint.sh` はそのずれを一覧にします。スキルではなくスクリプトだけです。

@@ -15,15 +15,19 @@
 | [`ci-review`](#ci-review) | 落ちた CI のログを読み、pr-caused / pre-existing / flaky / infrastructure（billing 含む）/ ci-definition / needs investigation に分類する（読むだけ） | PR 番号 / `--run <id>` / `--branch <name>` + `--workflow` / `-R owner/repo`（任意） | `/ci-review` のみ |
 | [`pr-fix`](#pr-fix) | レビュー指摘・conflict・checks 失敗を PR ブランチに反映して push する | PR 番号 + `--checks-only` / 指摘（任意） | `/pr-fix` のみ |
 | [`pr-land`](#pr-land) | 準備の整った PR をマージして後始末する | PR 番号 + `--keep-branch` / `--ignore-checks`（任意） | `/pr-land` のみ |
+| [`pr-describe`](#pr-describe) | 既存 PR の本文を diff とコミットから書き直す（人手の記述は残す） | PR 番号 + `--dry-run`（任意） | `/pr-describe` のみ |
+| [`pr-respond`](#pr-respond) | pr-fix の fix / decline をレビュアーへ 1 本のコメントで返す | PR 番号 + `--dry-run`（任意） | `/pr-respond` のみ |
 | [`worktree-sweep`](#worktree-sweep) | 残った worktree と不要ブランチを掃除する | スクリプトへ渡すオプション: `--dry-run` / `--recursive` / `--no-fetch` / `--force` / PATH（任意） | `/worktree-sweep` のみ |
 | [`label-sync`](#label-sync) | 既定のラベルセットをリポジトリに流し込む | `--dry-run` / `--prune` / `-R owner/repo`（任意） | `/label-sync` のみ |
 | [`label-apply`](#label-apply) | 既存の Issue / PR にラベルを付け直す | `--dry-run` / `--issues` / `--prs` / `--all` / `--limit N` / 番号（任意） | `/label-apply` のみ |
 | [`work-status`](#work-status) | 進行中の PR / worktree / ship-issues run を一覧し、次に叩くコマンドを出す（読むだけ） | `--no-fetch` / PATH（任意） | `/work-status` のみ |
 | [`backlog-review`](#backlog-review) | open Issue 群を調査して ready / in progress / blocked / duplicate 等に分類する（読むだけ） | `--limit` / `--label` / `--milestone` / `--since` / `-R` / 番号（任意） | `/backlog-review` のみ |
+| [`backlog-apply`](#backlog-apply) | backlog-review の分類を GitHub に反映する（close / 質問コメント / status ラベル） | `--dry-run`（任意）+ Issue 番号（任意） | `/backlog-apply` のみ |
 | [`handoff`](#handoff) | 作業の引継ぎ文書を書く / 読んで再開する | `--resume [file]`（任意）+ メモ | `/handoff` のみ |
 | [`release-cut`](#release-cut) | 前回リリース以降のマージ済み PR から版と release notes を起こし、GitHub release を作る | `--dry-run` / `--tag <version>` / `--draft` / `-R owner/repo`（任意） | `/release-cut` のみ |
+| [`repo-bootstrap`](#repo-bootstrap) | ラベルセット・PR / Issue テンプレート・CLAUDE.md 雛形を無いものだけ足す | `--dry-run` / `-R owner/repo`（任意） | `/repo-bootstrap` のみ |
 
-`cm` 以外の 17 は `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
+`cm` 以外の 21 は `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
 起動しません。`cm` だけは `user-invocable: true` で、コミット時にモデルからも選ばれます。
 
 定義同士の整合（frontmatter、argument-hint とこの表、`~/.claude/...` のパス参照、SKILL.md が
@@ -44,8 +48,9 @@ Issue 群 ─/ship-issues─> 依存分析 → ウェーブ → ワーカー →
 Issue ───/issue-pr───> PR                 （ship-issues のワーカーが踏襲する単位）
 ブランチ上の作業 ─/pr-ready─> PR          （Issue なしでも可。cm のコミット規約を内包）
 
-PR ─/pr-review─> 指摘 ─/pr-fix─> 修正を push ─/pr-land─> マージ + 掃除
+PR ─/pr-review─> 指摘 ─/pr-fix─> 修正を push ─/pr-respond─> fix / decline を 1 コメントで返信 ─/pr-land─> マージ + 掃除
      （--post で PR コメントに残す）（conflict / checks 失敗も pr-fix が直す）
+                              └─本文が古くなったら─/pr-describe─> PR 本文を diff から書き直す
 
 落ちた CI ─/ci-review─> check ごとに pr-caused / pre-existing / flaky / infrastructure / ci-definition / needs investigation（読むだけ）
                         ──pr-caused──> /pr-fix N --checks-only
@@ -75,6 +80,10 @@ open Issue 群 ─/backlog-review─> ready / in progress / blocked / duplicate 
                                  ──ready の番号──> /ship-issues、ラベルの食い違い──> /label-apply
                                  ──needs investigation の番号──> /issue-refine
                                  ──in progress の PR 番号──> /pr-review / /pr-land
+                                 ──duplicate / obsolete / already implemented / needs-info / blocked──> /backlog-apply
+                                                                                    （close・質問コメント・status ラベル）
+
+新規リポジトリ ─/repo-bootstrap─> label-sync + PR / Issue テンプレート + CLAUDE.md 雛形（無いものだけ）─> /pr-ready
 
 任意の作業 ─/handoff─> ~/.claude/handoff/<repo>-<日時>.md（+ .patch）
                        ─/handoff --resume─> 別セッション / 別エージェントで実状を照合して続き
@@ -124,6 +133,17 @@ open Issue 群 ─/backlog-review─> ready / in progress / blocked / duplicate 
 - `release-cut` は `pr-land` の先にある工程です。前回リリース以降にマージされた PR と
   Conventional Commits から次の版（major / minor / patch）と release notes を起こし、
   `gh release create` でタグごと作ります。コードにも `CHANGELOG.md` にも触りません。
+- `backlog-apply` は `backlog-review` の書き込み側です。同じ会話の分類だけを入力に、duplicate /
+  obsolete / already implemented を理由コメント付きで close し、needs-info には質問コメントと
+  ラベル、blocked にはラベルを付けます。自分では分類せず、ready / in progress / needs
+  investigation には触りません。
+- `pr-describe` は PR 本文を diff・コミット・Issue から書き直します。`pr-fix` で本文が古くなった
+  ときや手で作った PR 向けで、人手のチェックリストや注記は残し、タイトルは提案だけ。
+  `pr-respond` は同じ会話の `pr-fix` の fix / decline をレビュアーへ 1 本のコメントで返します。
+  インライン返信と thread の resolve は `gh api` の write なのでしません。
+- `repo-bootstrap` は新しいリポジトリを他のスキルの前提に合わせます。`label-sync.sh`、PR / Issue
+  テンプレート（`pr-ready` / `triage-notes` が書く節構成）、`CLAUDE.md` 雛形を**無いものだけ**
+  足して 1 コミットにし、branch protection や Actions の設定は人向けの一覧にします。
 - `handoff` はどのワークフローにも属さない横断ツールです。長い作業を別セッション
   （クラッシュ後・コンテキスト圧縮後・翌日）や別エージェント（Agent tool のワーカー、Codex）に
   渡すとき、会話の外に「文書 1 枚 + 未コミット差分の patch」を残します。リポジトリの状態は
@@ -166,7 +186,9 @@ Skill tool で呼ぶことはできません**（モデルが選択できない�
 - `ship-issues` のワーカー → `issue-pr/SKILL.md`（`ship-issues/worker-prompt.md` の雛形経由）
 - `ship-issues` の state file → `ship-issues/state-file.md`（`work-status.sh` が読める書式）
 - `ship-issues --merge` / `issue-pr --merge` / `pr-ready --merge` → `pr-land/SKILL.md`
-- `label-apply` / `triage-notes` / `issue-refine` / `issue-pr` / `pr-ready` / `backlog-review` → `label-apply/labeling-rules.md`
+- `label-apply` / `triage-notes` / `issue-refine` / `issue-pr` / `pr-ready` / `backlog-review` / `backlog-apply` / `pr-describe` → `label-apply/labeling-rules.md`
+- `repo-bootstrap` → `scripts/label-sync.sh`（`label-sync` と同じスクリプト）
+- `backlog-apply` / `pr-respond` は同じ会話の `backlog-review` / `pr-fix` の**出力**を入力にする（ファイル参照ではなく、会話に結果が無ければ止まる）
 
 このため Codex 側（Import 先は `~/.agents/skills`）では、これらのパス参照が解決しません。
 
@@ -197,8 +219,8 @@ GitHub MCP）はスキルからは使いません。対話中に Issue を検索
 
 | スキル | Codex での扱い |
 | --- | --- |
-| `cm` `triage-notes` `issue-refine` `issue-pr` `pr-ready` `pr-review` `ci-review` `pr-fix` `pr-land` `label-apply` `backlog-review` `handoff` `release-cut` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` / `pr-ready --merge` の `pr-land` 参照と、`label-apply` 系の `labeling-rules.md` 参照は `~/.claude` のパスなので解決しない。`issue-pr` / `pr-fix` / `pr-ready` の隔離 worktree は Claude Code の EnterWorktree 前提なので、Codex では `git worktree add` を手で行う。`handoff` の `~/.claude/handoff/` は単なるディレクトリなので Codex からも読み書きできる |
-| `worktree-sweep` `label-sync` `work-status` | `sh` / `git` / `gh` にしか依存しない。`~/.claude/scripts/*.sh` は Import の対象外なので、Codex 側では実体が要る |
+| `cm` `triage-notes` `issue-refine` `issue-pr` `pr-ready` `pr-review` `ci-review` `pr-fix` `pr-respond` `pr-describe` `pr-land` `label-apply` `backlog-review` `backlog-apply` `handoff` `release-cut` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` / `pr-ready --merge` の `pr-land` 参照と、`label-apply` 系の `labeling-rules.md` 参照は `~/.claude` のパスなので解決しない。`issue-pr` / `pr-fix` / `pr-ready` の隔離 worktree は Claude Code の EnterWorktree 前提なので、Codex では `git worktree add` を手で行う。`handoff` の `~/.claude/handoff/` は単なるディレクトリなので Codex からも読み書きできる |
+| `worktree-sweep` `label-sync` `work-status` `repo-bootstrap` | `sh` / `git` / `gh` にしか依存しない。`~/.claude/scripts/*.sh` は Import の対象外なので、Codex 側では実体が要る |
 | `ship-issues` `ship-notes` | Claude Code の Agent tool と `isolation: "worktree"` が前提。Codex には対応機能が無いため動かない |
 
 Codex が読む frontmatter は `name` と `description` だけです。
@@ -688,3 +710,72 @@ checkout / push をしない。記録するだけ）。
 
 `gh release list` / `gh release view` は読み取りなので `permissions.allow` に入れてあり、
 `gh release create` は都度確認です。
+
+## backlog-apply
+
+同じ会話の `backlog-review` の分類を GitHub に反映します。**自分では分類しません**（結果が
+会話に無ければ止まって `/backlog-review` を案内）。スキルを叩いたこと自体が close とコメントの
+承認で、10 件超を close するときだけ一度確認します（`--dry-run` を除く）。
+
+- 対象は duplicate / obsolete / already implemented / needs-info / blocked だけ。ready /
+  in progress（PR がマージされれば閉じる）/ needs investigation（`/issue-refine` の仕事）には触らない。
+  番号を渡せばその部分集合だけ
+- 適用前に 1 件ずつ読み直し、閉じていた・review 後に更新された・根拠が崩れた（重複先が閉じた、
+  マージ済み PR が revert された、依存が閉じた）Issue は触らずに報告する
+- 操作は already implemented → `gh issue close --reason completed` + `Implemented by #M`、
+  duplicate / obsolete → `--reason "not planned"` + 理由コメント（+ status ラベル）、needs-info →
+  質問コメント + needs-info ラベル、blocked → blocked ラベル。ラベルは
+  [`label-apply/labeling-rules.md`](label-apply/labeling-rules.md) の語彙で status 系だけ、
+  リポジトリに既にあるものから
+- 適用前に計画表（番号 / class / 操作 / コメント / ラベル）を出す。`--dry-run` はそこで止まる。
+  末尾に「Nothing else was changed on GitHub.」
+
+`gh issue close` / `comment` / `edit` は書き込み系なので都度確認が入ります。
+
+## pr-describe
+
+既存 PR の本文を diff・コミット・リンク先 Issue から書き直します。`pr-fix` が push を重ねて本文が
+古くなったとき、手で作った PR の本文が空のときに使います。**コードにも push にも触らず**、
+`gh pr edit --body-file` だけです。
+
+- 構成は PR テンプレートがあればそれ、無ければ Summary / Why / Verification / Issue。人手の
+  チェックリスト・注記・`Closes #N` は残し、変更を説明する散文だけ書き直す。既に diff と一致して
+  いれば何もしない
+- Verification は commit / 本文にある事実と、`gh pr checks` の結果（無ければ `no checks`）だけ。
+  でっち上げない。ログは読まない（`ci-review` の仕事）
+- タイトルは変えない。規約に合わなければ提案だけ
+- type ラベルは規則で付け直す（`gh pr edit --add-label`）。既存ラベルからだけ
+- `--dry-run` は本文案で止まる。マージ済み / closed の PR は触らない
+
+## pr-respond
+
+同じ会話の `pr-fix` の結果（fix / decline）を、レビュアーへ **PR コメント 1 本**で返します
+（`gh pr comment --body-file`）。`pr-fix` は GitHub に何も書かないので、その穴を埋めます。
+
+- 入力は `pr-fix` の結果だけ。無ければ止まる。指摘を再判定しない
+- GitHub 上の指摘（`gh pr view --comments` と、インラインは `gh api ... --paginate` の GET。
+  `pr-fix` と同じ唯一の例外で毎回確認）と `pr-fix` の verdict を著者・ファイル・文言で突き合わせ、
+  1 指摘 1 行で `fixed in <sha>` / `declined: <理由>` / `not ours: <ci-review の根拠>` を並べる。
+  verdict の無い指摘は「not addressed」として残す
+- インライン返信と thread の resolve は `gh api` の write なのでしない。レビュアーが読んで自分で
+  resolve する
+- `--dry-run` はコメント案で止まる。マージ済み / closed の PR には投稿しない
+
+## repo-bootstrap
+
+新しいリポジトリを他のスキルの前提に合わせます。**無いものだけ足し**、既にあるファイルは
+読んで残します。GitHub の設定は変えません（`gh api` の write が要るため人向けの一覧にする）。
+
+- 調査は `gh repo view`（default branch / visibility / merge 方式 / `deleteBranchOnMerge`）、
+  `gh workflow list`（Actions の有無）、`gh label list`、ローカルの `CLAUDE.md` / `.github/` /
+  `.gitignore` / 言語・ビルドツール。working tree が汚れていれば止まる
+- 実施は (1) `~/.claude/scripts/label-sync.sh`、(2) `.github/PULL_REQUEST_TEMPLATE.md`
+  （Summary / Why / Verification / Issue）、`.github/ISSUE_TEMPLATE/bug.md` / `feature.md`
+  （Problem / Expected behavior / Acceptance criteria / Scope / Out of scope / Investigation notes、
+  `labels:` に既存の type ラベル）、`CLAUDE.md` 雛形（Language / Verification / Branches）、
+  (3) それらを `cm` の規約で 1 コミット。push はせず `/pr-ready` に渡す
+- `.gitignore` は無ければ言語名を添えて「手で足す」と報告（GitHub のテンプレート取得は `gh api`）
+- 人が設定するもの: head branch の自動削除、squash 許可、branch protection、private なら
+  Actions の無料枠（billing 失敗は `infrastructure` 扱いで `/pr-land --ignore-checks`）
+- `--dry-run` は計画で止まる（`label-sync.sh --dry-run` も含む）。`-R owner/repo` は `gh` と
+  `label-sync.sh` に渡す。ローカルファイルはカレントがその checkout のときだけ書く
