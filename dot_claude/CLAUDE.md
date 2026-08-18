@@ -56,4 +56,7 @@
 # Authoring
 
 - Author skill (`SKILL.md`) and agent definitions in English. The Japanese rule
-  above governs responses, not the wording of the definitions themselves.
+  above governs responses, not the wording of the definitions themselves. A prompt
+  that a skill hands to a worker at run time (for example
+  `ship-issues/worker-prompt.md`) is user-facing output, not a definition, and
+  follows the Japanese rule.

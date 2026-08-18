@@ -226,8 +226,13 @@ sh ~/.claude/scripts/worktree-sweep.sh --dry-run
   どの削除条件にも当たらない）
 - 未コミット変更のある worktree、HEAD が remote に無い worktree、`gh` で裏を取れない
   ブランチは削除せず理由付きで報告する
-- 直近 60 分に更新された worktree は実行中のエージェントとみなしてスキップする（`--force` で解除）
-- カレントディレクトリが属する worktree とブランチには触らない
+- 直近 60 分に更新された worktree（ディレクトリ自体か、git admin dir の `HEAD` / `logs/HEAD`）は
+  実行中のエージェントとみなしてスキップする（`--force` で解除）
+- カレントディレクトリが属する worktree とブランチには触らない。agent worktree の中から叩くと
+  そのリポジトリは `skipped` になる
+- `--no-fetch` で `git fetch --prune` を省く。upstream が消えたブランチの検出が古くなる
+- `gh` が無い・未認証・オフラインのときは「upstream gone but unmerged; gh could not confirm」で
+  keep する。「no merged PR found」は GitHub に確認できたときだけ
 
 削除が「ロックで失敗する」ときの正体は 3 つあり、それぞれ扱いが違います。
 
@@ -339,7 +344,7 @@ run ファイルの書式は `ship-issues` 側で
 
 ## スキル定義の整合を検査する
 
-スキルは 17 本あり、frontmatter の形、`skills/README.md` の表、`~/.claude/skills/...` /
+スキルは 18 本あり、frontmatter の形、`skills/README.md` の表、`~/.claude/skills/...` /
 `~/.claude/scripts/...` のパス参照、「SKILL.md は英語で書く」という規則で互いに縛られて
 います。どれも機械が強制していないので、1 本を直すと別の場所が黙ってずれます。
 `scripts/skill-lint.sh` はそのずれを一覧にします。スキルではなくスクリプトだけです。
@@ -349,9 +354,10 @@ run ファイルの書式は `ship-issues` 側で
 sh dot_claude/scripts/executable_skill-lint.sh dot_claude/skills
 ```
 
-引数は skills ディレクトリで、既定は `~/.claude/skills`（配置後）。リポジトリ内では
-`dot_claude/skills` を渡します。パス参照は `dot_claude/` 配下に読み替え、スクリプトの
-`executable_` 接頭辞も吸収します。
+引数は skills ディレクトリです。`skills/README.md` は `.chezmoiignore` で配置されないので、
+配置後の `~/.claude/skills` に対しては表の検査が全部落ちます。**リポジトリ内で `dot_claude/skills`
+を渡して使うもの**で、パス参照は `dot_claude/` 配下に読み替え、スクリプトの `executable_` 接頭辞も
+吸収します。
 
 検査項目:
 

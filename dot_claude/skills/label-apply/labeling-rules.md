@@ -1,9 +1,13 @@
 # Labeling rules
 
 Shared rules for choosing GitHub labels for one Issue or Pull Request. Used by
-`label-apply` (bulk re-labeling) and by the skills that create Issues and Pull Requests
-(`triage-notes`, `issue-pr`, `pr-ready`). Read this file by path; do not paraphrase
-it into another skill.
+`label-apply` (bulk re-labeling), by the skills that create or edit Issues and Pull
+Requests (`triage-notes`, `issue-refine`, `issue-pr`, `pr-ready`, `pr-describe`,
+`backlog-apply`, `repo-bootstrap`), and by `backlog-review` (which only reads them).
+Read this file by path. Another skill may summarize what it needs from these rules in
+one line ("one type label from the repository's vocabulary; a status label only on the
+rules' evidence"), but must not restate the rules themselves: when the summary and this
+file disagree, this file wins.
 
 The rules work with **whatever labels the repository already has**. They do not
 require the default set that `label-sync` installs. If nothing in the repository fits,

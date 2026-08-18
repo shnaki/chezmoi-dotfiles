@@ -6,7 +6,7 @@
 | --- | --- | --- | --- |
 | [`cm`](#cm) | Conventional Commits でコミットする | コミットメッセージまたは変更の説明 | `/cm`（モデルからの自動起動も可） |
 | [`triage-notes`](#triage-notes) | メモを調査して GitHub Issue を起票する | `--dry-run`（任意）+ メモのファイルまたはテキスト | `/triage-notes` のみ |
-| [`issue-refine`](#issue-refine) | 既存 Issue を調査して実装可能な本文に書き換える | Issue 番号の並び + `--dry-run` / `--split`（任意） | `/issue-refine` のみ |
+| [`issue-refine`](#issue-refine) | 既存 Issue を調査して実装可能な本文に書き換える | `--dry-run` / `--split`（任意）+ Issue 番号の並び | `/issue-refine` のみ |
 | [`ship-issues`](#ship-issues) | 既存 Issue 群を並列ワーカーに割って PR 化する | Issue 番号の並び + `--merge` / `--ignore-checks` / `--dry-run` / `--resume` / `--no-merge`（任意） | `/ship-issues` のみ |
 | [`issue-pr`](#issue-pr) | Issue 1 件を PR 1 件として実装する | Issue 番号 + `--merge` / `--ignore-checks`（任意） | `/issue-pr` のみ |
 | [`pr-ready`](#pr-ready) | 現在ブランチの作業を diff 確認 → 検証 → コミット → PR にする | Issue 番号 + `--merge` / `--ignore-checks`（任意） | `/pr-ready` のみ |
@@ -27,9 +27,11 @@
 起動しません。`cm` だけは `user-invocable: true` で、コミット時にモデルからも選ばれます。
 
 定義同士の整合（frontmatter、argument-hint とこの表、`~/.claude/...` のパス参照、SKILL.md が
-英語であること）は `~/.claude/scripts/skill-lint.sh` で機械チェックします
-（[../README.md](../README.md#スキル定義の整合を検査する)）。スキルを足したり引数を変えたりしたら
-`sh dot_claude/scripts/executable_skill-lint.sh dot_claude/skills` を通してからコミットします。
+英語であること）は `scripts/skill-lint.sh` で機械チェックします
+（[../README.md](../README.md#スキル定義の整合を検査する)）。この README は `.chezmoiignore` で
+配置されないので、lint は **リポジトリのソースに対してだけ**動きます。スキルを足したり引数を
+変えたりしたら `sh dot_claude/scripts/executable_skill-lint.sh dot_claude/skills` を通してから
+コミットします。
 
 ## スキル間の関係
 
@@ -160,7 +162,8 @@ GitHub 側がマージを拒む（`BLOCKED`）ので、このオプションで 
 Skill tool で呼ぶことはできません**（モデルが選択できない設定のため）。スキルが他のスキルの
 手順に従う箇所では、`~/.claude/skills/<name>/SKILL.md` をパスで読ませています。
 
-- `ship-issues` のワーカー → `issue-pr/SKILL.md`
+- `ship-notes` → `triage-notes/SKILL.md` と `ship-issues/SKILL.md`
+- `ship-issues` のワーカー → `issue-pr/SKILL.md`（`ship-issues/worker-prompt.md` の雛形経由）
 - `ship-issues` の state file → `ship-issues/state-file.md`（`work-status.sh` が読める書式）
 - `ship-issues --merge` / `issue-pr --merge` / `pr-ready --merge` → `pr-land/SKILL.md`
 - `label-apply` / `triage-notes` / `issue-refine` / `issue-pr` / `pr-ready` / `backlog-review` → `label-apply/labeling-rules.md`
@@ -181,9 +184,11 @@ GitHub MCP）はスキルからは使いません。対話中に Issue を検索
 - 経路が 1 本なら、環境によってモデルが選ぶツールが変わって挙動がブレることがない
 - `worktree-sweep.sh` が既に `gh pr list` に依存している
 
-読み取り系の `gh` サブコマンドは `settings.json` の `permissions.allow` で許可し、
-書き込み系（`create` / `edit` / `close` / `merge`）は都度確認のままにしています
-（[../README.md](../README.md#gh-の読み取り系を許可している)）。
+読み取り系の `gh` サブコマンドと `git commit`（ローカルに閉じるため）は `settings.json` の
+`permissions.allow` で許可し、書き込み系（`create` / `edit` / `close` / `merge`）は都度確認の
+ままにしています。`gh api` は GET も allow に入れておらず、`pr-fix` / `pr-respond` がインラインの
+レビューコメントを読む 1 箇所だけが例外で、そこは毎回確認が入る前提です
+（[../README.md](../README.md#gh-の読み取り系と-git-commit-を許可している)）。
 
 ## Codex への移植性
 
@@ -192,7 +197,7 @@ GitHub MCP）はスキルからは使いません。対話中に Issue を検索
 
 | スキル | Codex での扱い |
 | --- | --- |
-| `cm` `triage-notes` `issue-refine` `issue-pr` `pr-ready` `pr-review` `ci-review` `pr-fix` `pr-land` `label-apply` `backlog-review` `handoff` `release-cut` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` / `pr-ready --merge` の `pr-land` 参照と、`label-apply` 系の `labeling-rules.md` 参照は `~/.claude` のパスなので解決しない。`handoff` の `~/.claude/handoff/` は単なるディレクトリなので Codex からも読み書きできる |
+| `cm` `triage-notes` `issue-refine` `issue-pr` `pr-ready` `pr-review` `ci-review` `pr-fix` `pr-land` `label-apply` `backlog-review` `handoff` `release-cut` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` / `pr-ready --merge` の `pr-land` 参照と、`label-apply` 系の `labeling-rules.md` 参照は `~/.claude` のパスなので解決しない。`issue-pr` / `pr-fix` / `pr-ready` の隔離 worktree は Claude Code の EnterWorktree 前提なので、Codex では `git worktree add` を手で行う。`handoff` の `~/.claude/handoff/` は単なるディレクトリなので Codex からも読み書きできる |
 | `worktree-sweep` `label-sync` `work-status` | `sh` / `git` / `gh` にしか依存しない。`~/.claude/scripts/*.sh` は Import の対象外なので、Codex 側では実体が要る |
 | `ship-issues` `ship-notes` | Claude Code の Agent tool と `isolation: "worktree"` が前提。Codex には対応機能が無いため動かない |
 
@@ -209,7 +214,8 @@ Codex が読む frontmatter は `name` と `description` だけです。
 - 変更を論理的なテーマでグループ分けし、単一テーマなら確認なしでそのままコミット、
   分割が必要／意図が不明な場合のみ確認を取る
 - `git add -A` / `git add .` は使わず、対象ファイルを明示。1 ファイルに複数テーマが
-  混ざる場合は `git add -p` で hunk 単位に stage する
+  混ざる場合は hunk を選んだ patch を `git apply --cached` で stage する（`git add -p` は
+  ツールのシェルでは対話できない）。本文付きのメッセージは一時ファイルから `git commit -F`
 - subject / body の言語はそのリポジトリの既存コミット（`git log`）に合わせ、慣例が無ければ
   日本語。subject は句点なし、body は句点あり。「何を」ではなく「なぜ」を書く。
   リポジトリに別のコミット規約があればそちらに従う
@@ -231,10 +237,10 @@ Codex が読む frontmatter は `name` と `description` だけです。
   Investigation notes の構成。Investigation notes は参考情報であって実装指示ではない
 - ラベルは [`label-apply/labeling-rules.md`](label-apply/labeling-rules.md) の規則で、
   リポジトリに既にあるものから type（と根拠のある status）を `--label` で付ける。作らない
-- 起票前に計画表（タイトル / ラベル / 元メモ / 依存）と本文案を出す。`--dry-run` はそこで
-  止まる。本文はリポジトリ外の一時ファイルに書いて `gh issue create --body-file`。言語は
-  リポジトリの既存 Issue に合わせる
-- 起票後に依存関係を分析し、実行ウェーブに分類する
+- 起票前に依存関係を分析して実行ウェーブに分類し、計画表（行 / タイトル / ラベル / 元メモ /
+  依存）と本文案を出す。`--dry-run` はそこで止まる。本文はリポジトリ外の一時ファイルに書いて
+  `gh issue create --body-file`。言語はリポジトリの既存 Issue に合わせる
+- 起票後にウェーブを実番号で言い直す
 
 ## issue-refine
 
@@ -244,9 +250,11 @@ Codex が読む frontmatter は `name` と `description` だけです。
 
 - 引数は Issue 番号の並び（`31` / `#31` / URL、空白・カンマ区切り）。無引数では動かない
   （既定で全 open を触らない）。1 件ずつ独立に処理し、1 件の失敗で残りを止めない
-- 着手前に既存 PR / 重複 Issue を検索し、refinable / already implemented / duplicate /
-  obsolete / blocked に判定する。refinable と blocked だけ本文を書き換え、他は報告のみ
-  （close も新規起票もしない）
+- 着手前に既存 PR（`closingIssuesReferences` → `Closes #N` → `<N>-` ブランチ名の順で照合）/
+  重複 Issue を検索し、refinable / already implemented / in progress / duplicate / obsolete /
+  blocked に判定する。refinable・in progress・blocked だけ本文を書き換え、他は報告のみ
+  （close も新規起票もしない）。`ship-issues` / `backlog-review` の needs investigation はここで
+  verdict を付け直す
 - コードを読んで現状挙動・原因候補・影響モジュール・テスト・依存を確認する。再現や
   根本原因は根拠なしに断言しない。言い換えるだけで情報が増えないなら書き換えず報告
 - 本文は `triage-notes` と同じ Problem / Expected behavior / Acceptance criteria / Scope /
@@ -273,8 +281,10 @@ Codex が読む frontmatter は `name` と `description` だけです。
 既に起票済みの Issue 番号を複数受け取り、並列ワーカーに割り当てて PR 化する
 オーケストレータです。本体では実装しません。
 
-- 引数は `101 102 103` / `#101 #102 #103` / `101,102,103` のいずれの形でも受け付け、
-  重複を除いた Issue リストに正規化する。指定外の Issue には手を出さない
+- 引数は `101 102 103` / `#101 #102 #103` / `101,102,103` / Issue URL のいずれの形でも受け付け、
+  重複を除いた Issue リストに正規化する。指定外の Issue には手を出さない。着手前に base branch
+  （`defaultBranchRef`）、state file 用のリポジトリ名（`nameWithOwner`）、検証コマンドを確定し、
+  ワーカーの雛形（`worker-prompt.md`）の穴を埋める
 - 着手前に各 Issue を ready / already implemented / in progress / blocked / obsolete /
   duplicate / needs investigation に分類し、既存 PR と競合する実装を起こさない。
   in progress（open PR あり）はその PR を案内し、needs investigation はワーカーを起こさず
@@ -661,8 +671,10 @@ checkout / push をしない。記録するだけ）。
 - 前回リリースは `gh release list` の最新の非 draft・非 prerelease、無ければ最新タグ、それも
   無ければ初回 release（root からの全履歴）。タグの接頭辞（`v` の有無）や notes の言語・見出しは
   既存の release に合わせる
-- `git log <prev>..origin/<base>` と `gh pr list --state merged` を突き合わせ、PR タイトルの
-  Conventional Commits prefix → `type/*` ラベル → 中のコミットの prefix の順に type を決める
+- `gh pr list --state merged` を一次ソースにし、`git log <prev>..origin/<base>`（merge commit 含む）
+  と突き合わせて PR に紐づかないコミットだけ個別行にする（merge commit 運用でも 1 PR 1 行）。
+  取得件数が `--limit` に達したら止める。type は PR タイトルの Conventional Commits prefix →
+  `type/*` ラベル → 中のコミットの prefix の順に決める
 - 版は `feat!` / `BREAKING CHANGE` → major、`feat` → minor、それ以外 → patch を**提案**。
   `--tag` で上書きできる（提案も併記する）
 - notes は Breaking changes / Features / Fixes / Other の節に 1 PR 1 行 `(#N)` 付きで、
@@ -670,7 +682,8 @@ checkout / push をしない。記録するだけ）。
 - `CHANGELOG.md` があれば追記案を報告に載せるだけで編集しない（それは PR にすべき変更）
 - 適用前に前回タグ・範囲・提案タグ・節ごとの件数・notes 全文を出す。`--dry-run` はそこで止まる。
   200 件超、または既にリリース済みのタグを跨ぐ範囲のときだけ一度確認する
-- タグが既にあれば止まる。`gh release create` の失敗は別タグで再試行しない
+- タグが既にあれば止まる（`--tag` 指定分は step 1 で、提案タグは作成直前に確認）。
+  `gh release create` の失敗は別タグで再試行しない
 - `--draft` で下書き、`-R owner/repo` で別リポジトリ（ローカル checkout が無ければ `gh` だけで動く）
 
 `gh release list` / `gh release view` は読み取りなので `permissions.allow` に入れてあり、
