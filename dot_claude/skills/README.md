@@ -5,24 +5,30 @@
 | スキル | 内容 | 引数 | 起動 |
 | --- | --- | --- | --- |
 | [`cm`](#cm) | Conventional Commits でコミットする | コミットメッセージまたは変更の説明 | `/cm`（モデルからの自動起動も可） |
-| [`triage-notes`](#triage-notes) | メモを調査して GitHub Issue を起票する | メモのファイルまたはテキスト | `/triage-notes` のみ |
+| [`triage-notes`](#triage-notes) | メモを調査して GitHub Issue を起票する | `--dry-run`（任意）+ メモのファイルまたはテキスト | `/triage-notes` のみ |
 | [`issue-refine`](#issue-refine) | 既存 Issue を調査して実装可能な本文に書き換える | Issue 番号の並び + `--dry-run` / `--split`（任意） | `/issue-refine` のみ |
-| [`ship-issues`](#ship-issues) | 既存 Issue 群を並列ワーカーに割って PR 化する | Issue 番号の並び + `--merge` / `--resume`（任意） | `/ship-issues` のみ |
+| [`ship-issues`](#ship-issues) | 既存 Issue 群を並列ワーカーに割って PR 化する | Issue 番号の並び + `--merge` / `--dry-run` / `--resume`（任意） | `/ship-issues` のみ |
 | [`issue-pr`](#issue-pr) | Issue 1 件を PR 1 件として実装する | Issue 番号 + `--merge`（任意） | `/issue-pr` のみ |
-| [`pr-ready`](#pr-ready) | 現在ブランチの作業を diff 確認 → 検証 → コミット → PR にする | Issue 番号（任意） | `/pr-ready` のみ |
+| [`pr-ready`](#pr-ready) | 現在ブランチの作業を diff 確認 → 検証 → コミット → PR にする | Issue 番号 + `--merge`（任意） | `/pr-ready` のみ |
 | [`ship-notes`](#ship-notes) | メモ → Issue → PR を通しで回す | `--merge`（任意）+ メモのファイルまたはテキスト | `/ship-notes` のみ |
-| [`pr-review`](#pr-review) | PR を独立した立場でレビューする | PR 番号 | `/pr-review` のみ |
-| [`pr-fix`](#pr-fix) | レビュー指摘を PR ブランチに反映して push する | PR 番号 + 指摘（任意） | `/pr-fix` のみ |
+| [`pr-review`](#pr-review) | PR を独立した立場でレビューする | PR 番号 + `--post`（任意） | `/pr-review` のみ |
+| [`pr-fix`](#pr-fix) | レビュー指摘・conflict・checks 失敗を PR ブランチに反映して push する | PR 番号 + 指摘（任意） | `/pr-fix` のみ |
 | [`pr-land`](#pr-land) | 準備の整った PR をマージして後始末する | PR 番号 + `--keep-branch`（任意） | `/pr-land` のみ |
-| [`worktree-sweep`](#worktree-sweep) | 残った worktree と不要ブランチを掃除する | スクリプトへ渡すオプション | `/worktree-sweep` のみ |
+| [`worktree-sweep`](#worktree-sweep) | 残った worktree と不要ブランチを掃除する | スクリプトへ渡すオプション: `--dry-run` / `--recursive` / `--no-fetch` / `--force` / PATH（任意） | `/worktree-sweep` のみ |
 | [`label-sync`](#label-sync) | 既定のラベルセットをリポジトリに流し込む | `--dry-run` / `--prune` / `-R owner/repo`（任意） | `/label-sync` のみ |
-| [`label-apply`](#label-apply) | 既存の Issue / PR にラベルを付け直す | `--dry-run` / `--issues` / `--prs` / `--all` / 番号（任意） | `/label-apply` のみ |
-| [`work-status`](#work-status) | 進行中の PR / worktree / ship-issues run を一覧し、次に叩くコマンドを出す（読むだけ） | `--no-fetch`（任意） | `/work-status` のみ |
-| [`backlog-review`](#backlog-review) | open Issue 群を調査して ready / blocked / duplicate 等に分類する（読むだけ） | `--limit` / `--label` / `--milestone` / `--since` / `-R` / 番号（任意） | `/backlog-review` のみ |
+| [`label-apply`](#label-apply) | 既存の Issue / PR にラベルを付け直す | `--dry-run` / `--issues` / `--prs` / `--all` / `--limit N` / 番号（任意） | `/label-apply` のみ |
+| [`work-status`](#work-status) | 進行中の PR / worktree / ship-issues run を一覧し、次に叩くコマンドを出す（読むだけ） | `--no-fetch` / PATH（任意） | `/work-status` のみ |
+| [`backlog-review`](#backlog-review) | open Issue 群を調査して ready / in progress / blocked / duplicate 等に分類する（読むだけ） | `--limit` / `--label` / `--milestone` / `--since` / `-R` / 番号（任意） | `/backlog-review` のみ |
 | [`handoff`](#handoff) | 作業の引継ぎ文書を書く / 読んで再開する | `--resume [file]`（任意）+ メモ | `/handoff` のみ |
+| [`release-cut`](#release-cut) | 前回リリース以降のマージ済み PR から版と release notes を起こし、GitHub release を作る | `--dry-run` / `--tag <version>` / `--draft` / `-R owner/repo`（任意） | `/release-cut` のみ |
 
-`cm` 以外の 15 は `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
+`cm` 以外の 16 は `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
 起動しません。`cm` だけは `user-invocable: true` で、コミット時にモデルからも選ばれます。
+
+定義同士の整合（frontmatter、argument-hint とこの表、`~/.claude/...` のパス参照、SKILL.md が
+英語であること）は `~/.claude/scripts/skill-lint.sh` で機械チェックします
+（[../README.md](../README.md#スキル定義の整合を検査する)）。スキルを足したり引数を変えたりしたら
+`sh dot_claude/scripts/executable_skill-lint.sh dot_claude/skills` を通してからコミットします。
 
 ## スキル間の関係
 
@@ -36,9 +42,13 @@ Issue ───/issue-pr───> PR                 （ship-issues のワー�
 ブランチ上の作業 ─/pr-ready─> PR          （Issue なしでも可。cm のコミット規約を内包）
 
 PR ─/pr-review─> 指摘 ─/pr-fix─> 修正を push ─/pr-land─> マージ + 掃除
+     （--post で PR コメントに残す）（conflict / checks 失敗も pr-fix が直す）
 
 /ship-notes = /triage-notes → /ship-issues を繋ぐだけ
-/ship-issues --merge / /issue-pr --merge ──> PR 作成後に /pr-land を続けて回す
+/ship-issues --merge / /issue-pr --merge / /pr-ready --merge ──> PR 作成後に /pr-land を続けて回す
+/triage-notes --dry-run / /ship-issues --dry-run ──> 起票 / ウェーブ計画だけ見て止まる
+
+マージ済み PR 群 ─/release-cut─> 版の提案 + release notes ─> gh release create（--dry-run で提案だけ）
 
 /ship-issues ──最終ステップ──> /worktree-sweep 相当の掃除
 /pr-land     ──最終ステップ──> 同上
@@ -51,9 +61,10 @@ PR ─/pr-review─> 指摘 ─/pr-fix─> 修正を push ─/pr-land─> マー
 /work-status ──> いま何が動いていて次に何を叩くかを一覧（読むだけ）
                  ──> /pr-fix /pr-review /pr-land /pr-ready /ship-issues --resume /worktree-sweep へ案内
 
-open Issue 群 ─/backlog-review─> ready / blocked / duplicate … に分類（読むだけ）
+open Issue 群 ─/backlog-review─> ready / in progress / blocked / duplicate … に分類（読むだけ）
                                  ──ready の番号──> /ship-issues、ラベルの食い違い──> /label-apply
                                  ──needs investigation の番号──> /issue-refine
+                                 ──in progress の PR 番号──> /pr-review / /pr-land
 
 任意の作業 ─/handoff─> ~/.claude/handoff/<repo>-<日時>.md（+ .patch）
                        ─/handoff --resume─> 別セッション / 別エージェントで実状を照合して続き
@@ -69,8 +80,15 @@ open Issue 群 ─/backlog-review─> ready / blocked / duplicate … に分類�
   オーケストレータ本体では実装しません。
 - Issue から始めるなら `/issue-pr`、手元で書き終えた作業を PR にするなら `/pr-ready`。
   `pr-ready` は実装をせず、既にブランチにある変更を確認・検証・コミットして PR にするだけです。
-- `pr-review` → `pr-fix` → `pr-land` が PR 作成後の一直線です。`pr-review` は読むだけ、
+- `pr-review` → `pr-fix` → `pr-land` が PR 作成後の一直線です。`pr-review` は読むだけ
+  （`--post` で結果を PR コメントに残せる。自分の PR には approve できないので COMMENT 固定）、
   `pr-fix` は直して push するだけ、マージするのは `pr-land` だけ、と工程を分けています。
+  `work-status` が conflict / checks 失敗を `/pr-fix N` に案内するので、`pr-fix` はレビュー指摘
+  だけでなく base との conflict 解消（`git merge origin/<base>`、rebase はしない）と CI 失敗の
+  修正も引き受けます。
+- `pr-land` は checks を待ってから `mergeStateStatus` を判定します。required checks が走っている
+  間は GitHub が `BLOCKED` を返すため、先に判定すると PR 作成直後に必ず止まるからです。checks が
+  緑でも `BLOCKED` なら branch protection（required review）で、承認は GitHub 側の作業です。
 - `worktree-sweep` は `ship-issues` が残す worktree とブランチの後始末です。
   `ship-issues` と `pr-land` が最終ステップで同じスクリプトを呼ぶため、通常は手で叩く
   必要はありません。
@@ -83,10 +101,13 @@ open Issue 群 ─/backlog-review─> ready / blocked / duplicate … に分類�
   走っている最中や中断後に、open PR・agent worktree・未完の run を横断して「次に叩く
   スキル」を行ごとに出します。自分では何も実行しません。
 - `backlog-review` は `ship-issues` に渡す番号を選ぶ前段です。open Issue を読んで
-  ready / already implemented / blocked / duplicate / obsolete / needs-info / needs investigation
-  に分類し、`/ship-issues <ready の番号>` / `/issue-refine <needs investigation の番号>` /
-  `/label-apply <食い違いの番号>` の案を出します。
+  ready / already implemented / in progress / blocked / duplicate / obsolete / needs-info /
+  needs investigation に分類し、`/ship-issues <ready の番号>` / `/issue-refine <needs investigation の番号>` /
+  `/label-apply <食い違いの番号>` / `/pr-review <in progress の PR>` の案を出します。
   GitHub 側は一切変更しません（ラベルも close もコメントもしない）。
+- `release-cut` は `pr-land` の先にある工程です。前回リリース以降にマージされた PR と
+  Conventional Commits から次の版（major / minor / patch）と release notes を起こし、
+  `gh release create` でタグごと作ります。コードにも `CHANGELOG.md` にも触りません。
 - `handoff` はどのワークフローにも属さない横断ツールです。長い作業を別セッション
   （クラッシュ後・コンテキスト圧縮後・翌日）や別エージェント（Agent tool のワーカー、Codex）に
   渡すとき、会話の外に「文書 1 枚 + 未コミット差分の patch」を残します。リポジトリの状態は
@@ -105,7 +126,8 @@ Skill tool で呼ぶことはできません**（モデルが選択できない�
 手順に従う箇所では、`~/.claude/skills/<name>/SKILL.md` をパスで読ませています。
 
 - `ship-issues` のワーカー → `issue-pr/SKILL.md`
-- `ship-issues --merge` / `issue-pr --merge` → `pr-land/SKILL.md`
+- `ship-issues` の state file → `ship-issues/state-file.md`（`work-status.sh` が読める書式）
+- `ship-issues --merge` / `issue-pr --merge` / `pr-ready --merge` → `pr-land/SKILL.md`
 - `label-apply` / `triage-notes` / `issue-refine` / `issue-pr` / `pr-ready` / `backlog-review` → `label-apply/labeling-rules.md`
 
 このため Codex 側（Import 先は `~/.agents/skills`）では、これらのパス参照が解決しません。
@@ -135,7 +157,7 @@ GitHub MCP）はスキルからは使いません。対話中に Issue を検索
 
 | スキル | Codex での扱い |
 | --- | --- |
-| `cm` `triage-notes` `issue-refine` `issue-pr` `pr-ready` `pr-review` `pr-fix` `pr-land` `label-apply` `backlog-review` `handoff` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` の `pr-land` 参照と、`label-apply` 系の `labeling-rules.md` 参照は `~/.claude` のパスなので解決しない。`handoff` の `~/.claude/handoff/` は単なるディレクトリなので Codex からも読み書きできる |
+| `cm` `triage-notes` `issue-refine` `issue-pr` `pr-ready` `pr-review` `pr-fix` `pr-land` `label-apply` `backlog-review` `handoff` `release-cut` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` / `pr-ready --merge` の `pr-land` 参照と、`label-apply` 系の `labeling-rules.md` 参照は `~/.claude` のパスなので解決しない。`handoff` の `~/.claude/handoff/` は単なるディレクトリなので Codex からも読み書きできる |
 | `worktree-sweep` `label-sync` `work-status` | `sh` / `git` / `gh` にしか依存しない。`~/.claude/scripts/*.sh` は Import の対象外なので、Codex 側では実体が要る |
 | `ship-issues` `ship-notes` | Claude Code の Agent tool と `isolation: "worktree"` が前提。Codex には対応機能が無いため動かない |
 
@@ -153,7 +175,9 @@ Codex が読む frontmatter は `name` と `description` だけです。
   分割が必要／意図が不明な場合のみ確認を取る
 - `git add -A` / `git add .` は使わず、対象ファイルを明示。1 ファイルに複数テーマが
   混ざる場合は `git add -p` で hunk 単位に stage する
-- subject は日本語・句点なし、body は日本語・句点あり。「何を」ではなく「なぜ」を書く
+- subject / body の言語はそのリポジトリの既存コミット（`git log`）に合わせ、慣例が無ければ
+  日本語。subject は句点なし、body は句点あり。「何を」ではなく「なぜ」を書く。
+  リポジトリに別のコミット規約があればそちらに従う
 - `co-authored-by` 相当の記述と、使用ツールへの言及は禁止
 
 ## triage-notes
@@ -172,6 +196,9 @@ Codex が読む frontmatter は `name` と `description` だけです。
   Investigation notes の構成。Investigation notes は参考情報であって実装指示ではない
 - ラベルは [`label-apply/labeling-rules.md`](label-apply/labeling-rules.md) の規則で、
   リポジトリに既にあるものから type（と根拠のある status）を `--label` で付ける。作らない
+- 起票前に計画表（タイトル / ラベル / 元メモ / 依存）と本文案を出す。`--dry-run` はそこで
+  止まる。本文はリポジトリ外の一時ファイルに書いて `gh issue create --body-file`。言語は
+  リポジトリの既存 Issue に合わせる
 - 起票後に依存関係を分析し、実行ウェーブに分類する
 
 ## issue-refine
@@ -213,9 +240,10 @@ Codex が読む frontmatter は `name` と `description` だけです。
 
 - 引数は `101 102 103` / `#101 #102 #103` / `101,102,103` のいずれの形でも受け付け、
   重複を除いた Issue リストに正規化する。指定外の Issue には手を出さない
-- 着手前に各 Issue を ready / already implemented / blocked / obsolete / duplicate /
-  needs investigation に分類し、既存 PR と競合する実装を起こさない。needs investigation は
-  ワーカーを起こさず `/issue-refine <N>` を案内する
+- 着手前に各 Issue を ready / already implemented / in progress / blocked / obsolete /
+  duplicate / needs investigation に分類し、既存 PR と競合する実装を起こさない。
+  in progress（open PR あり）はその PR を案内し、needs investigation はワーカーを起こさず
+  `/issue-refine <N>` を案内する
 - ready な Issue について影響範囲（API・共有型・スキーマ・マイグレーション・生成物・
   lock ファイル・ルーティング・ビルド設定など）を見積もり、Issue 間の関係を
   independent / potentially conflicting / semantically dependent /
@@ -235,10 +263,19 @@ Codex が読む frontmatter は `name` と `description` だけです。
 `--merge` を付けると、ウェーブ完了ごとにそのウェーブの PR を `pr-land` の手順で
 1 件ずつマージしてから次のウェーブへ進みます。`pr-land` が止めた PR は
 `PR created, not merged (理由)` として記録し、残りは続行します。ワーカーはマージしません。
+required review のあるリポジトリでは checks が緑でも `BLOCKED` で全件止まるので、
+`--merge` は自分でマージできるリポジトリ向けです。
+
+`--dry-run` を付けると、分類とウェーブ計画（step 6）まで進めて state file を書き、
+ワーカーを起こさずに終わります。数時間走る前に計画だけ確認する用途です。
 
 実行計画と Issue ごとの状態は `~/.claude/ship-issues/<repo>-<日時>.md` に書き出します。
+書式は [`ship-issues/state-file.md`](ship-issues/state-file.md) のテンプレートに固定して
+います。`work-status.sh` が見出し行（`- repository:` など）と `| #N |` で始まる表と `DONE`
+行を parse するので、別の形で書くと `/work-status` から run が見えなくなります。
 Claude Desktop のクラッシュや中断を跨いで `/ship-issues --resume` で再開するためのもので、
 再開時はファイルを鵜呑みにせず `gh` と `git worktree list` で実状を取り直します。
+`--resume` に付けたオプションは state file の options に追加されます。
 このディレクトリはランタイム状態なので chezmoi では管理しません。
 
 ## issue-pr
@@ -270,8 +307,8 @@ Issue 番号 1 件を受け取り、PR 1 件として実装します。Issue が
 - Issue 番号は任意引数。省略時はブランチ名（`123-foo` など）やコミットメッセージ（`#123`、
   `Github-Issue:` トレーラ）から候補を出し、Issue を読んで一致を確認できたときだけ `Closes #N`
   を付ける。確信が持てなければ閉じず、候補として報告する
-- default branch 上なら、未コミット変更だけのときは新ブランチを切って続行。default branch に
-  コミット済みのものがあれば止まって報告する
+- default branch 上なら、未コミット変更だけのときは新ブランチ（Issue があれば `<N>-<slug>`、
+  無ければ `<slug>`）を切って続行。default branch にコミット済みのものがあれば止まって報告する
 - `git status` / `git diff` / base branch との差分全体を読み、無関係な変更・デバッグコード・
   一時ファイル・生成物・lock ファイル・秘密情報・マシン固有パスを取り除く
 - `pr-review` と同じ観点（correctness / scope / 規約 / テスト）で自己レビューし、明らかな欠陥は直す
@@ -280,7 +317,8 @@ Issue 番号 1 件を受け取り、PR 1 件として実装します。Issue が
 - 同ブランチの PR が既にあれば作らず報告。PR テンプレートがあればそれに従い、無ければ
   Summary / Why / Verification / Issue の構成。`gh pr create` で作る
 - type ラベルは `issue-pr` と同じ規則で、リポジトリに既にあるものから付ける
-- force-push しない。マージしない
+- force-push しない。マージしない。`--merge` を付けたときだけ、PR 作成後に `pr-land` の
+  手順でマージする
 
 ## ship-notes
 
@@ -302,7 +340,9 @@ PR はマージしません。
 PR 番号 1 件を、実装者ではなくレビュアーの立場でレビューします。**ファイルを変更せず**、
 push もマージもしません。
 
-- PR 本文とリンク先 Issue を読み、受け入れ条件とスコープ境界を把握してから差分を見る
+- 引数は `82` / `#82` / URL を番号に正規化し、無引数なら現在ブランチの PR
+- PR 本文とリンク先 Issue を読み、受け入れ条件とスコープ境界を把握してから差分を見る。
+  Issue の無い PR（`pr-ready` 由来）は PR 本文がスコープ境界
 - 差分は base branch との全体を見る。断片だけを見ない
 - 観点は correctness（誤動作・エッジケース・競合状態・データ損失・互換性）、scope
   （Issue と無関係な変更）、リポジトリ規約、テストと検証の十分さ、混入物
@@ -311,16 +351,24 @@ push もマージもしません。
   弱い指摘を並べるより、確度の高い少数を出す
 - 出力は APPROVE / REQUEST CHANGES / COMMENT の判定から始め、Critical / High / Medium / Low
   の順に列挙。最後に Issue coverage / Scope / Verification assessment を述べる
+- `--post` を付けたときだけ、同じ本文を `gh pr review --comment --body-file` で PR に残す。
+  自分の PR には APPROVE / REQUEST_CHANGES を出せないので COMMENT 固定。別セッションの
+  `pr-fix` が拾える。`reviewDecision` は変わらないので `work-status` は `/pr-review N` を出し続ける
 
 ## pr-fix
 
-`pr-review` の指摘を PR ブランチに反映して push します。**マージしません**。
-GitHub へのコメント投稿もしません。
+`pr-review` の指摘、base との conflict、checks の失敗を PR ブランチに反映して push します。
+**マージしません**。GitHub へのコメント投稿もしません。
 
 - 指摘の入力元は、引数の自由記述 → 同じ会話の `pr-review` 出力 → GitHub 上のレビュー
-  （`gh pr view --comments`、インラインは `gh api` の GET）の順
-- PR の head ブランチにいなければ隔離 worktree（`pr-<N>`）で `gh pr checkout` する。
+  （`gh pr view --comments`。`pr-review --post` のコメントも含む。インラインは `gh api` の GET）
+  → `mergeable=CONFLICTING` / `DIRTY`（`BEHIND` は up-to-date 必須のときだけ）→
+  `gh pr checks` の失敗（`gh run view --log-failed` でログを読む）の順。5 つとも空なら止まる
+- head ブランチが既に別 worktree（`ship-issues` のワーカーが残したもの）に checkout されて
+  いればそこで直す。無ければ隔離 worktree（`pr-<N>`）で `gh pr checkout` する。
   default branch の checkout では直さない
+- conflict は `git merge origin/<base>` で解消する。rebase は force-push になるのでしない。
+  checks の失敗は base でも起きるものなら pre-existing として decline する
 - 指摘は 1 件ずつ fix / decline に振り分ける。丸呑みも黙殺もしない。事実誤認、意図的な挙動、
   PR のスコープ外、リポジトリが求めないスタイル上の好みは理由付きで decline する
 - 検証はリポジトリ規定に従う。既存の失敗は直さず記録する
@@ -332,19 +380,29 @@ GitHub へのコメント投稿もしません。
 マージ前に再確認は取りません。ただし赤信号では必ず止まり、押し切りません。
 
 - 止める条件: open でない / draft / `CONFLICTING` / `CHANGES_REQUESTED` /
-  `gh pr checks` の失敗 / 議論に未対応の反対意見。**直さずに止めて報告する**
+  `gh pr checks` の失敗 / checks が緑になった後も `BLOCKED`（required review）/ `DIRTY` /
+  up-to-date 必須のリポジトリで `BEHIND` / 議論に未対応の反対意見。**直さずに止めて報告する**
   （直すのは `pr-fix` の仕事）
-- マージ方式はリポジトリの慣例に従い、不明なら `--squash`。既定で `--delete-branch` を
-  付けて remote ブランチを消す。残したいときだけ `--keep-branch` を付ける（ローカルの
-  後始末には影響しない）
+- 判定順は「即止まる条件 → `gh pr checks --watch` → 状態を読み直して `mergeStateStatus` を判定」。
+  required checks が走っている間は GitHub が `BLOCKED` を返し、push 直後は `mergeable` が
+  `UNKNOWN` になるため、checks の前に判定すると PR 作成直後に必ず止まる。`UNKNOWN` は
+  最大 1 分ほど読み直す
+- マージ方式はリポジトリの慣例に従い、不明なら `--squash`。squash では `--subject` / `--body`
+  を `cm` の規約（`<type>(<scope>): <subject> (#N)`）で明示し、`gh` 既定の PR タイトル +
+  コミット見出し一覧にしない。既定で `--delete-branch` を付けて remote ブランチを消す。
+  残したいときだけ `--keep-branch` を付ける（ローカルの後始末には影響しない）
 - `gh` はローカルブランチ → remote ブランチの順に消すので、ローカルブランチが worktree で
   checkout 中（`ship-issues --merge` の通常ケース）だとローカル削除で失敗して **remote が
-  残る**。マージ済みなら停止条件にせず、`gh api` で remote ブランチの有無を確かめ、残って
-  いれば `git push origin --delete <branch>` で消してから後始末へ進む
-  （`gh api -X DELETE .../git/refs/heads/<branch>` は権限分類器にブロックされる）
+  残る**。マージ済みなら停止条件にせず、`git ls-remote --exit-code --heads origin <branch>`
+  で remote ブランチの有無を確かめ、残っていれば `git push origin --delete <branch>` で
+  消してから後始末へ進む（`gh api` は GET でも `permissions.allow` 外で毎回プロンプト、
+  `-X DELETE` は権限分類器にブロックされる）
 - マージ後に紐づく Issue が閉じたか確認する。閉じていなければ報告のみ（手で閉じない）
 - 後始末は base branch へ切替 → `git fetch --prune` → `git pull --ff-only` →
-  `worktree-sweep.sh`。`git` の削除コマンドは自分で叩かない
+  `worktree-sweep.sh`。カレントが agent worktree の中（`issue-pr --merge` / `pr-ready --merge`
+  を EnterWorktree したセッションで回した場合）なら、`git -C <main-root>` で main checkout 側を
+  更新し、いる worktree は sweeper が keep する（次の `/worktree-sweep` で消える）。
+  `git` の削除コマンドは自分で叩かない
 - コードは変更しない。push もしない
 
 ## worktree-sweep
@@ -392,19 +450,19 @@ GitHub へのコメント投稿もしません。
 | --- | --- | --- |
 | `type/bug` | 想定どおり動かない | `bug` |
 | `type/feature` | 新機能・既存挙動の拡張（`feat`） | `enhancement` `feature` |
-| `type/refactor` | 挙動を変えない内部整理 | `refactor` |
+| `type/refactor` | 挙動を変えない内部整理 | `refactor` `refactoring` |
 | `type/perf` | 性能改善 | `perf` `performance` |
 | `type/docs` | ドキュメントのみ | `documentation` `docs` |
 | `type/test` | テストの追加・修正のみ | `test` `tests` |
 | `type/chore` | 保守・ツール・ビルド・CI・依存の整理（commit type の `chore` / `ci` / `build` / `style` をまとめる） | `chore` `ci` `build` |
 | `priority/high` `priority/medium` `priority/low` | 優先度。本文に明示があるときだけ付ける | — |
 | `status/blocked` | 他の Issue / PR / 外部要因待ち | `blocked` |
-| `status/needs-info` | 報告者からの情報待ち | `question` |
+| `status/needs-info` | 報告者からの情報待ち | `question` `needs-info` |
 | `status/duplicate` | 別の Issue / PR で追跡済み | `duplicate` |
 | `status/wontfix` | 対応しないと決めた | `wontfix` |
 | `dependencies` | Dependabot / Renovate の依存更新 | — |
 | `security` | 脆弱性修正・堅牢化 | — |
-| `breaking-change` | 互換性を壊す変更（`feat!:` / `BREAKING CHANGE:`） | `breaking` |
+| `breaking-change` | 互換性を壊す変更（`feat!:` / `BREAKING CHANGE:`） | `breaking` `breaking change` |
 | `good first issue` `help wanted` | GitHub 既定のまま。自動では付け外ししない | — |
 
 `invalid` はセットに含めていません（`unmanaged` として残り、`--prune` で未使用なら消える）。
@@ -415,8 +473,8 @@ GitHub へのコメント投稿もしません。
 ラベルは作りません。判断規則は [`label-apply/labeling-rules.md`](label-apply/labeling-rules.md)
 にあり、`triage-notes` / `issue-pr` / `pr-ready` も同じファイルを読みます。
 
-- 既定は open な Issue と PR を各 200 件まで。`--issues` / `--prs` で絞り、`--all` で closed も
-  含める。番号や URL を渡せばその項目だけ
+- 既定は open な Issue と PR を各 200 件まで（`--limit N`）。`--issues` / `--prs` で絞り、
+  `--all` で closed も含める。番号や URL を渡せばその項目だけ
 - 語彙は `gh label list` から解決する。既定セット（`type/*` …）が無いリポジトリでは
   `bug` / `enhancement` / `documentation` などの既存の語彙に対応付ける。type 系のラベルが
   1 つも無ければ止めて `/label-sync` を案内する
@@ -453,8 +511,8 @@ GitHub へのコメント投稿もしません。
 
 open Issue 群を読んで、1 件ずつちょうど 1 つの分類に振り分けます。**読むだけ**で、
 ラベル付け・close・コメント・状態変更のどれもしません。`ship-issues` に渡す番号を選ぶ前段で、
-`ship-issues` step 3 の分類（ready / already implemented / blocked / obsolete / duplicate /
-needs investigation）に needs-info を足した 7 分類を使います。
+`ship-issues` step 3 の分類（ready / already implemented / in progress / blocked / obsolete /
+duplicate / needs investigation）に needs-info を足した 8 分類を使います。
 
 - 既定は open Issue を 200 件まで（`--limit`）。`--label`（複数は AND）/ `--milestone` /
   `--since <日付>`（その日以降に更新されたもの）/ `-R owner/repo` で絞る。番号や URL を
@@ -466,13 +524,15 @@ needs investigation）に needs-info を足した 7 分類を使います。
 - コメントがある Issue だけ `gh issue view --comments` で読む。重複探しの `gh search issues`
   は Issue ごとに最大 1 回。コードは「既に実装済みか」「対象がまだあるか」を確かめる範囲だけ読む
 - 分類は優先順に判定し、先に当たったものを採用する:
-  already implemented（マージ済み / open な PR が紐づく、またはコードが既に満たす）→ duplicate
+  already implemented（マージ済み PR が紐づく、またはコードが既に満たす）→ in progress
+  （open な PR が紐づく。close 案は出さず `/pr-review` / `/pr-land` を案内）→ duplicate
   （残す側を名指し）→ obsolete → blocked → needs-info → needs investigation → ready。
   blocked と needs-info の定義は [`labeling-rules.md`](label-apply/labeling-rules.md) step 4
   のもの。迷ったら needs investigation にして何が足りないかを書き、推測で ready にしない
 - 出力は件数サマリ → 分類ごとの表（番号 / タイトル / 根拠 / 注記）→ 既存 status ラベルとの
   食い違い一覧 → 次に叩くコマンド案（`/ship-issues <ready 番号>`、`/issue-refine <needs investigation 番号>`、
-  `/label-apply <食い違い番号>`、duplicate / obsolete / already implemented の `gh issue close` 案）。
+  `/label-apply <食い違い番号>`、in progress の `/pr-review <PR>`、
+  duplicate / obsolete / already implemented の `gh issue close` 案）。
   案は出すだけで実行しない。
   末尾に「Nothing was changed on GitHub.」を必ず書く
 - 影響範囲の見積もりやウェーブ設計はしない（`ship-issues` の仕事）。ready 同士に明白な順序
@@ -487,7 +547,7 @@ checkout / push をしない。記録するだけ）。
 - 引数は先頭が `--resume` なら受け取りモード（残りはファイル指定、省略時はカレント
   リポジトリ名で始まる最新）。それ以外は自由記述のメモ（渡し先や追加指示）として文書に載せる
 - 書き出し先は `~/.claude/handoff/<repo>-<YYYYMMDD-HHMM>.md`。未コミットの tracked 変更が
-  あれば同名 `.patch`（`git diff HEAD`）を隣に置く。worktree 隔離のサブエージェントや別マシン
+  あれば同名 `.patch`（`git diff HEAD --binary`）を隣に置く。worktree 隔離のサブエージェントや別マシン
   には未コミット差分が見えないため。untracked ファイルは patch に入らないので一覧だけ書く
 - 文書は英語固定の見出し（How to resume / Goal / Constraints / Repository state / Done /
   In progress / Next steps / Decisions / Verification / Known issues / Key files）、本文は
@@ -503,3 +563,28 @@ checkout / push をしない。記録するだけ）。
   （`/handoff --resume <path>`、他ツール向けには `Read <path> and continue from "Next steps".`）
 
 このディレクトリはランタイム状態なので chezmoi では管理しません（`.chezmoiignore` で除外）。
+
+## release-cut
+
+前回リリース以降に base branch へマージされたものから次の版と release notes を起こし、
+`gh release create` で release とタグを作ります。**コードも `CHANGELOG.md` も変更しません**
+（commit / push / `git tag` をしない。タグは `gh release create` に作らせる）。
+スキルを叩いたこと自体が release 作成の承認で、適用前に再確認は取りません（`--dry-run` を除く）。
+
+- 前回リリースは `gh release list` の最新の非 draft・非 prerelease、無ければ最新タグ、それも
+  無ければ初回 release（root からの全履歴）。タグの接頭辞（`v` の有無）や notes の言語・見出しは
+  既存の release に合わせる
+- `git log <prev>..origin/<base>` と `gh pr list --state merged` を突き合わせ、PR タイトルの
+  Conventional Commits prefix → `type/*` ラベル → 中のコミットの prefix の順に type を決める
+- 版は `feat!` / `BREAKING CHANGE` → major、`feat` → minor、それ以外 → patch を**提案**。
+  `--tag` で上書きできる（提案も併記する）
+- notes は Breaking changes / Features / Fixes / Other の節に 1 PR 1 行 `(#N)` 付きで、
+  空の節は省く。末尾に compare URL。ツール痕跡は残さない
+- `CHANGELOG.md` があれば追記案を報告に載せるだけで編集しない（それは PR にすべき変更）
+- 適用前に前回タグ・範囲・提案タグ・節ごとの件数・notes 全文を出す。`--dry-run` はそこで止まる。
+  200 件超、または既にリリース済みのタグを跨ぐ範囲のときだけ一度確認する
+- タグが既にあれば止まる。`gh release create` の失敗は別タグで再試行しない
+- `--draft` で下書き、`-R owner/repo` で別リポジトリ（ローカル checkout が無ければ `gh` だけで動く）
+
+`gh release list` / `gh release view` は読み取りなので `permissions.allow` に入れてあり、
+`gh release create` は都度確認です。
