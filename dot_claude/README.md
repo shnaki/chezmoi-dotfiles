@@ -11,6 +11,7 @@
 | `output-styles/ja-concise.md` | `~/.claude/output-styles/ja-concise.md` | 日本語・簡潔応答スタイル |
 | `skills/*/` | `~/.claude/skills/*/` | スキル定義（`SKILL.md`）と付随ファイル（[skills/README.md](skills/README.md)） |
 | `scripts/*.sh` | `~/.claude/scripts/*.sh` | スキルから呼ぶシェルスクリプト（後述） |
+| `forge/gitlab.md` | `~/.claude/forge/gitlab.md` | GitLab で使うときの `gh` → `glab` 読み替え表。`gitlab` と判定されたときだけスキルが読む（[後述](#github-か-gitlab-かを判定する)） |
 
 `~/.claude` のパスは Windows / Linux ともに同じなので、OS ごとの分岐はありません。
 
@@ -134,29 +135,36 @@ Import が上書きするため維持できません。
 
 ## gh の読み取り系と git commit を許可している
 
-スキルは GitHub 操作を GitHub CLI（`gh`）に統一しています
+スキルはフォージ操作を GitHub CLI（`gh`）と GitLab CLI（`glab`）に統一しています
 （[skills/README.md](skills/README.md#前提ツール)）。都度の権限プロンプトを減らすため、
-`settings.json` の `permissions.allow` に副作用のない `gh` サブコマンドだけを入れています。
+`settings.json` の `permissions.allow` に副作用のないサブコマンドだけを入れています。
 
 - 許可: `gh auth status` / `gh repo view` / `gh pr list|view|diff|checks|status` /
   `gh issue list|view|status` / `gh label list` / `gh release list|view` /
   `gh run list|view`（`ci-review` / `pr-fix` が失敗した checks のログと base 側の履歴を
   読む）/ `gh workflow list`（Actions が無効か workflow が無いかを見る）/
-  `gh search issues|prs`
+  `gh search issues|prs`。glab 側は同じ範囲で `glab auth status` / `glab repo view` /
+  `glab mr list|view|diff|issues` / `glab issue list|view` / `glab label list` /
+  `glab release list|view` / `glab ci list|get|status|trace`
 - 許可しない: `gh api`（GET も POST も同じ入口で区別できない。唯一の例外は `pr-fix` /
   `pr-respond` がインラインのレビューコメントを GET する箇所で、毎回確認が入る前提）、
   `create` / `edit` / `close` / `merge` / `comment` / `review` / `release create` /
   `label create|edit|delete` / `run rerun|cancel` などの書き込み系。これらは都度確認のまま
+- `glab api` だけは `Bash(glab api -X GET:*)` の形で許可しています。glab は gh より JSON
+  出力の範囲が狭く、MR が閉じる Issue・approvals・レビュー discussion は REST を読むしか
+  ないためで、`forge/gitlab.md` はその形（`glab api -X GET <endpoint>`）でしか書きません。
+  `-X` を省いた形や `--field` 付き（POST になる）は前方一致しないので都度確認になります
 
 `git commit` も許可に入れています。ローカルに閉じていて取り消せるうえ、`cm` や
 `pr-ready` など多くのスキルが必ず通る工程のためです。auto mode の分類器が
 `git commit` を弾いて手が止まることがあり、その回避も兼ねています。`git push` と
 ブランチ削除は remote に出るため許可していません。
 
-スクリプトは `sh ~/.claude/scripts/work-status.sh` だけ許可しています。読み取り専用で、
-`/work-status` が毎回プロンプトになるのを避けるためです。`worktree-sweep.sh`（削除）と
-`label-sync.sh`（GitHub への書き込み）は都度確認のままです。スクリプト内部の `gh` は
-1 本の Bash コマンドとして判定されるので、`gh` 側の許可は届きません。
+スクリプトは `sh ~/.claude/scripts/work-status.sh` と `sh ~/.claude/scripts/forge-detect.sh`
+だけ許可しています。どちらも読み取り専用で、`/work-status` と各スキル冒頭のフォージ判定が
+毎回プロンプトになるのを避けるためです。`worktree-sweep.sh`（削除）と `label-sync.sh`
+（フォージへの書き込み）は都度確認のままです。スクリプト内部の `gh` / `glab` は 1 本の Bash
+コマンドとして判定されるので、CLI 側の許可は届きません。
 
 `enabledPlugins` の `github@claude-plugins-official`（GitHub MCP）は対話用に残していますが、
 スキルからは使いません。MCP 側のツールは `permissions.allow` に入れていないので、
@@ -221,18 +229,19 @@ sh ~/.claude/scripts/worktree-sweep.sh --dry-run
 
 - 削除するのは「孤児 worktree ディレクトリ」「クリーンかつ HEAD が remote に届いている
   登録済み worktree」「base branch にマージ済みのブランチ」「upstream が `[gone]` で、
-  かつ `gh` がマージ済み PR を確認できたブランチ」だけ
+  かつフォージ CLI がマージ済み PR を確認できたブランチ」だけ
 - **オープンな PR のブランチは消えません**（upstream が生きていて未マージのため、
   どの削除条件にも当たらない）
-- 未コミット変更のある worktree、HEAD が remote に無い worktree、`gh` で裏を取れない
+- 未コミット変更のある worktree、HEAD が remote に無い worktree、CLI で裏を取れない
   ブランチは削除せず理由付きで報告する
 - 直近 60 分に更新された worktree（ディレクトリ自体か、git admin dir の `HEAD` / `logs/HEAD`）は
   実行中のエージェントとみなしてスキップする（`--force` で解除）
 - カレントディレクトリが属する worktree とブランチには触らない。agent worktree の中から叩くと
   そのリポジトリは `skipped` になる
 - `--no-fetch` で `git fetch --prune` を省く。upstream が消えたブランチの検出が古くなる
-- `gh` が無い・未認証・オフラインのときは「upstream gone but unmerged; gh could not confirm」で
-  keep する。「no merged PR found」は GitHub に確認できたときだけ
+- フォージ CLI（GitHub なら `gh`、GitLab なら `glab`。`forge-detect.sh` で判定）が無い・未認証・
+  オフラインのときは「upstream gone but unmerged; ... could not confirm」で keep する。
+  「no merged PR found」はフォージに確認できたときだけ
 
 削除が「ロックで失敗する」ときの正体は 3 つあり、それぞれ扱いが違います。
 
@@ -274,6 +283,35 @@ sh ~/.claude/scripts/label-sync.sh --dry-run
 - rename 元が複数あるとき（`chore` と `ci` の両方があるなど）は表の先頭のものだけ rename し、
   残りは `superseded` として報告する。統合は `/label-apply` で付け替えてから `--prune` で消す
 - `-R owner/repo` で対象を指定できる。省略時はカレントディレクトリのリポジトリ
+- GitHub か GitLab かは `forge-detect.sh`（後述）で決め、GitLab では `glab label
+  create` / `glab label edit --label-id` / `glab label delete` に置き換える。グループから
+  継承したラベルはプロジェクトから編集も削除もできないので、差があっても `keep` / `retain`
+  で報告するだけ。カレントディレクトリが別フォージのリポジトリのときは `--forge github|gitlab`
+  を `-R` と一緒に渡す
+
+## GitHub か GitLab かを判定する
+
+スキルは `gh` のコマンドで書いてあり、GitLab のリポジトリでは `~/.claude/forge/gitlab.md`
+の対応表で `glab` に読み替えて動きます（[skills/README.md](skills/README.md#gitlab-で使う)）。
+どちらのフォージかを決めるのが `scripts/forge-detect.sh` で、各スキルの冒頭と
+`work-status.sh` / `worktree-sweep.sh` / `label-sync.sh` の内部から使われます。
+
+```bash
+sh ~/.claude/scripts/forge-detect.sh [PATH]
+```
+
+出力は 1 行、タブ区切りで `<forge> <host> <path>`（例: `github	github.com	shnaki/chezmoi-dotfiles`）。
+判定順は `origin` のホストが `github.com` なら `github`（`gh` の認証が要る）、それ以外は
+`glab auth status --hostname <host>` が通れば `gitlab`、`gh auth status -h <host>` が通れば
+`github`（GHES）、どれも通らなければ理由を stderr に出して exit 1。`<path>` は URL から
+取った `owner/repo` で、GitLab のサブグループ（`group/sub/project`）はそのまま残します。
+`https://`・`ssh://`・`git@host:path` のどの形の remote でも読めます。
+
+スクリプトから使うときは `. forge-detect.sh` で `forge_detect [PATH]` 関数だけを取り込み
+（source しても何も実行しない）、成功時に `FORGE` / `FORGE_CLI` / `FORGE_HOST` / `FORGE_PATH`、
+失敗時に `FORGE_ERROR` が入ります。従来各スキルが冒頭でやっていた `gh auth status` +
+`gh repo view --json nameWithOwner` をこの 1 回に置き換えたので、GitHub で使うときの
+呼び出し回数もコンテキストも増えていません。
 
 ## 進行中の作業を一覧する
 
@@ -332,9 +370,11 @@ next / reason）、`state` と `srow`（`DONE` の無い run ファイルの見�
   見えない。この限界はスクリプトが毎回 `note` に出し、スキルも回答に含める
 - run ファイルは `DONE` の有無と見出し 5 行だけを読み、表は生の行を `srow` で流す。
   run ごとに列構成が違うので構造解析はしない。「どこまで進んだか」はモデルが読み、
-  事実は git / gh の列で見る
-- `gh` が無い・未認証・remote 無しでも止まらない。PR 系の列を `?` にしてローカル
-  信号だけで判定し、`repo` 行の `gh` に理由を出す
+  事実は git / フォージ CLI の列で見る
+- CLI が無い・未認証・remote 無しでも止まらない。PR 系の列を `?` にしてローカル
+  信号だけで判定し、`repo` 行の `forge` 列を `no-remote` / `failed` にして `note` に理由を出す
+  （通常は `github` / `gitlab`）。GitLab では `glab mr list` と MR ごとの `glab ci get` で
+  同じ列を作り、`next` の判定表は共通
 - 他リポジトリの未完 run はファイル名を `note` に並べるだけ
 
 run ファイルの書式は `ship-issues` 側で
@@ -366,13 +406,17 @@ sh dot_claude/scripts/executable_skill-lint.sh dot_claude/skills
 - `argument-hint` の `--flag` / `-X` が README 表の「引数」列にすべて載っていて、逆も成り立つ
   （`argument-hint` が無いのに表にオプションがある場合も報告）。本文が `- \`--flag\` …` の箇条書きか
   `### \`--flag\`` の見出しで説明しているオプションは `argument-hint` にもある
-- スキル配下の `*.md` と `skills/README.md` にある `~/.claude/skills/...` / `~/.claude/scripts/...`
-  が実在する。`skills/README.md` の `](#anchor)` / `](../README.md#anchor)` が見出しに解決する
+- スキル配下の `*.md` と `skills/README.md` にある `~/.claude/skills/...` / `~/.claude/scripts/...` /
+  `~/.claude/forge/...` が実在する。`skills/README.md` の `](#anchor)` / `](../README.md#anchor)`
+  が見出しに解決する
 - `SKILL.md` の本文（frontmatter 以降）に日本語が無い（かな・漢字に加えて `、。「」` と全角英数も
   見る。`worker-prompt.md` などの付随ファイルは対象外。日本語で書くものがあるため）
 - README の表にすべてのスキルの行があり、ディレクトリの無い行が無く、`## <name>` 節があり、
   「`cm` 以外の N は」の N がディレクトリ数と合う
 - `scripts/*.sh` はどれかの `*.md` から参照されている（孤児スクリプトを検出）
+- スキル配下の `*.md` に現れる `gh <cmd> <sub>`（と `gh api`）すべてに `forge/gitlab.md` の
+  `### gh <cmd> <sub>` 見出しがあり、逆にどのスキルも使っていない見出しが無い（GitLab への
+  読み替え表が SKILL.md の変更に追随しているか）
 
 違反は `file:line: message` で出し、1 件でもあれば終了コード 1 です。
 

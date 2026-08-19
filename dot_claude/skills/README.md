@@ -18,7 +18,7 @@
 | [`pr-describe`](#pr-describe) | 既存 PR の本文を diff とコミットから書き直す（人手の記述は残す） | PR 番号 + `--dry-run`（任意） | `/pr-describe` のみ |
 | [`pr-respond`](#pr-respond) | pr-fix の fix / decline をレビュアーへ 1 本のコメントで返す | PR 番号 + `--dry-run`（任意） | `/pr-respond` のみ |
 | [`worktree-sweep`](#worktree-sweep) | 残った worktree と不要ブランチを掃除する | スクリプトへ渡すオプション: `--dry-run` / `--recursive` / `--no-fetch` / `--force` / PATH（任意） | `/worktree-sweep` のみ |
-| [`label-sync`](#label-sync) | 既定のラベルセットをリポジトリに流し込む | `--dry-run` / `--prune` / `-R owner/repo`（任意） | `/label-sync` のみ |
+| [`label-sync`](#label-sync) | 既定のラベルセットをリポジトリに流し込む | `--dry-run` / `--prune` / `--forge <github か gitlab>` / `-R owner/repo`（任意） | `/label-sync` のみ |
 | [`label-apply`](#label-apply) | 既存の Issue / PR にラベルを付け直す | `--dry-run` / `--issues` / `--prs` / `--all` / `--limit N` / 番号（任意） | `/label-apply` のみ |
 | [`work-status`](#work-status) | 進行中の PR / worktree / ship-issues run を一覧し、次に叩くコマンドを出す（読むだけ） | `--no-fetch` / PATH（任意） | `/work-status` のみ |
 | [`backlog-review`](#backlog-review) | open Issue 群を調査して ready / in progress / blocked / duplicate 等に分類する（読むだけ） | `--limit` / `--label` / `--milestone` / `--since` / `-R` / 番号（任意） | `/backlog-review` のみ |
@@ -194,23 +194,68 @@ Skill tool で呼ぶことはできません**（モデルが選択できない�
 
 ## 前提ツール
 
-全スキルは `git` と、インストール・認証済みの GitHub CLI（`gh`）を前提にしています。
-Issue / PR の読み取り・検索・作成は **すべて `gh` に統一**し、各 SKILL.md にもその旨を
-明記しています。`gh` が無い、または未認証なら、スキルは別の手段に逃げず止まって報告します。
+全スキルは `git` と、リポジトリのホスティング先に応じた CLI —— GitHub なら GitHub CLI
+（`gh`）、GitLab なら GitLab CLI（`glab`）—— がインストール・認証済みであることを前提に
+しています。Issue / PR の読み取り・検索・作成は **すべてその CLI に統一**し、各 SKILL.md
+にもその旨を明記しています。CLI が無い、または未認証なら、スキルは別の手段に逃げず止まって
+報告します。どちらを使うかは `scripts/forge-detect.sh` が `origin` のホストから決めます
+（[GitLab で使う](#gitlab-で使う)）。
 
 `settings.json` で有効にしている GitHub プラグイン（`github@claude-plugins-official`、
 GitHub MCP）はスキルからは使いません。対話中に Issue を検索したいといった用途のために
-残してあるだけです。`gh` に寄せる理由:
+残してあるだけです。CLI に寄せる理由:
 
 - Codex 側の前提（`git` + `gh`、後述）と揃う。MCP は Codex に届く保証がない
 - 経路が 1 本なら、環境によってモデルが選ぶツールが変わって挙動がブレることがない
-- `worktree-sweep.sh` が既に `gh pr list` に依存している
+- `worktree-sweep.sh` が既に `gh pr list` / `glab mr list` に依存している
 
-読み取り系の `gh` サブコマンドと `git commit`（ローカルに閉じるため）は `settings.json` の
-`permissions.allow` で許可し、書き込み系（`create` / `edit` / `close` / `merge`）は都度確認の
-ままにしています。`gh api` は GET も allow に入れておらず、`pr-fix` / `pr-respond` がインラインの
-レビューコメントを読む 1 箇所だけが例外で、そこは毎回確認が入る前提です
+読み取り系の `gh` / `glab` サブコマンドと `git commit`（ローカルに閉じるため）は
+`settings.json` の `permissions.allow` で許可し、書き込み系（`create` / `edit` / `close` /
+`merge`）は都度確認のままにしています。`gh api` は GET も allow に入れておらず、`pr-fix` /
+`pr-respond` がインラインのレビューコメントを読む 1 箇所だけが例外で、そこは毎回確認が入る
+前提です。`glab api` は `glab api -X GET` と書いた形だけを allow に入れています（glab は
+gh より JSON 出力の範囲が狭く、MR が閉じる Issue・approvals・discussion の取得は REST を
+読むしかないため）。書き込みの `api` はどちらも禁止です
 （[../README.md](../README.md#gh-の読み取り系と-git-commit-を許可している)）。
+
+## GitLab で使う
+
+スキル本文は `gh` のコマンドで書いてあり、GitLab では **同じ手順を `glab` に読み替えて**
+実行します。GitHub 版と GitLab 版を別スキルにはしていません（21 スキルのロジックが二重に
+なり、直すたびに両方を触ることになるため）。仕組みは 3 つだけです。
+
+1. `scripts/forge-detect.sh` —— 各スキルが最初に 1 回だけ実行します。`origin` のホストが
+   `github.com` なら `github`、それ以外で `glab auth status --hostname <host>` が通れば
+   `gitlab`、`gh auth status -h <host>` が通れば `github`（GHES）。出力は
+   `<forge>\t<host>\t<path>` の 1 行で、`<path>` は `owner/repo`（GitLab ではサブグループ込みの
+   `group/sub/project`）。どれも通らなければ理由を出して exit 1 し、スキルは止まります。
+   従来各スキルがやっていた `gh auth status` + `gh repo view --json nameWithOwner` の
+   代わりなので、GitHub 経路の呼び出し回数は増えません。
+2. `~/.claude/forge/gitlab.md` —— スキルで使う全 `gh` コマンド（`gh pr view`、
+   `gh pr checks`、`gh run view` …）ごとに、対応する `glab` コマンドと JSON フィールドの
+   対応（`mergeStateStatus` → `detailed_merge_status`、`reviewDecision` → approvals、
+   checks → pipeline / job、`gh run view --log-failed` → `glab ci trace` など）、GitLab に
+   無いものの扱い（`gh issue close --reason` はコメント + close、draft release は無い）を
+   書いた対応表です。`ci-review` は GitHub Actions 前提の作りなので、pipeline / job で
+   読み替える専用の節があります。**`gitlab` と判定されたときだけ Read** するので、GitHub
+   で使うときのコンテキストは増えません。
+3. 各 SKILL.md の前提段落 —— 「`forge-detect.sh` を実行し、`github` なら以下の `gh` を
+   そのまま、`gitlab` なら `gitlab.md` で読み替える」の 1 段落だけを差し替えてあります。
+   コマンド本文は `gh` のままです。
+
+`scripts/work-status.sh` / `worktree-sweep.sh` / `label-sync.sh` は内部で同じ判定関数を
+`source` し、`glab` に分岐します（`work-status.sh` は MR の状態を GitHub と同じ列・同じ値に
+正規化するので、`next` の判定表は共通）。`label-sync.sh` は GitLab では `glab label
+create` / `glab label edit --label-id` / `glab label delete` を使い、グループから継承した
+ラベルは編集も削除もせずその旨を報告します。
+
+セルフホストの GitLab は `glab auth login --hostname <host>` を一度通しておきます
+（API のポートが違うときは `--api-host <host>:<port>`）。`GITLAB_HOST` は使いません。
+
+対応表の網羅性は `skill-lint.sh` が機械チェックします: スキル配下の `*.md` に現れる
+`gh <cmd> <sub>` すべてに `gitlab.md` の `### gh <cmd> <sub>` 見出しがあること、逆に
+使われていない見出しが無いことです。`gh` コマンドを新しく使い始めたら、`gitlab.md` に節を
+足さないと lint が落ちます。
 
 ## Codex への移植性
 
@@ -220,7 +265,7 @@ GitHub MCP）はスキルからは使いません。対話中に Issue を検索
 | スキル | Codex での扱い |
 | --- | --- |
 | `cm` `triage-notes` `issue-refine` `issue-pr` `pr-ready` `pr-review` `ci-review` `pr-fix` `pr-respond` `pr-describe` `pr-land` `label-apply` `backlog-review` `backlog-apply` `handoff` `release-cut` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` / `pr-ready --merge` の `pr-land` 参照と、`label-apply` 系の `labeling-rules.md` 参照は `~/.claude` のパスなので解決しない。`issue-pr` / `pr-fix` / `pr-ready` の隔離 worktree は Claude Code の EnterWorktree 前提なので、Codex では `git worktree add` を手で行う。`handoff` の `~/.claude/handoff/` は単なるディレクトリなので Codex からも読み書きできる |
-| `worktree-sweep` `label-sync` `work-status` `repo-bootstrap` | `sh` / `git` / `gh` にしか依存しない。`~/.claude/scripts/*.sh` は Import の対象外なので、Codex 側では実体が要る |
+| `worktree-sweep` `label-sync` `work-status` `repo-bootstrap` | `sh` / `git` / `gh`（GitLab では `glab`）にしか依存しない。`~/.claude/scripts/*.sh` と `~/.claude/forge/gitlab.md` は Import の対象外なので、Codex 側では実体が要る |
 | `ship-issues` `ship-notes` | Claude Code の Agent tool と `isolation: "worktree"` が前提。Codex には対応機能が無いため動かない |
 
 Codex が読む frontmatter は `name` と `description` だけです。
@@ -557,11 +602,15 @@ rerun も cancel もコメントも commit もしません。「なぜ落ちた�
 
 既定のラベルセットをリポジトリに冪等に流し込みます。判定ロジックとラベルの定義は全て
 `~/.claude/scripts/label-sync.sh` にあり、スキルはそれを呼んで結果を要約するだけです。
-スキル側で `gh label` の書き込みを直接叩きません。
+スキル側で `gh label` / `glab label` の書き込みを直接叩きません。
 
-- 引数はスクリプトへそのまま渡す（`--dry-run` / `--prune` / `-R owner/repo`）
+- 引数はスクリプトへそのまま渡す（`--dry-run` / `--prune` / `--forge github|gitlab` /
+  `-R owner/repo`）。`--forge` は `-R` で別フォージのリポジトリを指すときだけ要る
 - GitHub 既定の `bug` / `enhancement` / `documentation` / `question` / `duplicate` / `wontfix`
-  は rename で取り込み、付与済みの Issue からラベルが外れないようにする
+  は rename で取り込み、付与済みの Issue からラベルが外れないようにする（GitLab の新規
+  プロジェクトには既定ラベルが無いので、そのときは単に create になる）
+- GitLab でグループから継承したラベルは編集も削除もできないので、差があっても `keep` /
+  `retain` としてその旨を報告する
 - セット外のラベルは `unmanaged` として報告するだけ。`--prune` 時のみ、1 件も付いていない
   ものを消す
 - rename 元が複数あるときは表の先頭のものだけ rename し、残りは `superseded` として
@@ -620,7 +669,8 @@ rerun も cancel もコメントも commit もしません。「なぜ落ちた�
 何も変更しません。判定は全て `~/.claude/scripts/work-status.sh` にあり、スキルは出力を
 表に整形して限界を添えるだけです。
 
-- 対象は repo 全体。open PR（`gh pr list`）、agent worktree とローカルブランチ
+- 対象は repo 全体。open PR（`gh pr list`、GitLab では `glab mr list` + MR ごとの
+  `glab ci get`）、agent worktree とローカルブランチ
   （`git worktree list` / `for-each-ref`）、`~/.claude/ship-issues/` の `DONE` が無い run を
   ブランチ名で結合し、1 単位 1 行にする
 - 各行の `next` は `/pr-fix` / `/ci-review` / `/pr-review` / `/pr-land` / `/pr-ready` /
@@ -629,7 +679,7 @@ rerun も cancel もコメントも commit もしません。「なぜ落ちた�
   checks 失敗は `/ci-review` に送る（billing / flaky を `pr-fix` に持ち込まないため）。表には
   判断根拠の `checks` / `review` 列も出す
 - state file は「その Issue が ship-issues 由来か」「run の進み具合の主張」としてだけ読む。
-  事実は git と gh の列で、食い違えば表が勝つ
+  事実は git とフォージ CLI の列で、食い違えば表が勝つ
 - Agent の生存はヒューリスティック。確定信号は worktree lock の pid が生きていることだけで、
   直近の更新・ブランチ・PR・state file はヒント。別セッションのバックグラウンド Agent は
   見えない。この限界は毎回出力に含める
