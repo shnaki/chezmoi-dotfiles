@@ -25,9 +25,10 @@ read each by path and follow it as written:
 - `~/.claude/skills/triage-notes/SKILL.md`
 - `~/.claude/skills/ship-issues/SKILL.md`
 
-All GitHub operations go through the GitHub CLI (`gh`). Before the first `gh` call, run
-`gh auth status`; if `gh` is unavailable or not authenticated, stop and report instead of
-falling back.
+All forge operations go through the forge CLI: `gh` on GitHub, `glab` on GitLab. Both
+workflows start by running `sh ~/.claude/scripts/forge-detect.sh` and, on `gitlab`, read
+`~/.claude/forge/gitlab.md`; follow that as they describe it. If the script fails, stop
+and report its message instead of falling back to another client.
 
 # Workflow
 

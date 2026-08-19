@@ -9,11 +9,12 @@ Report what is in flight and what to run next. Read-only.
 
 All decisions live in `~/.claude/scripts/work-status.sh`. Do not reimplement its rules,
 do not derive a different `next` yourself, and do not run the commands it suggests.
-This skill changes nothing: no `gh` writes, no sweep, no edits to state files.
+This skill changes nothing: no `gh` / `glab` writes, no sweep, no edits to state files.
 
-All GitHub reads go through the GitHub CLI (`gh`), inside the script. If the script
-reports `gh` as missing, unauthenticated, or failed, present the local-only result and
-say so. Do not fill the gap with another GitHub client.
+All forge reads go through the forge CLI (`gh` on GitHub, `glab` on GitLab), inside the
+script, which picks the CLI with `~/.claude/scripts/forge-detect.sh`. If the `forge`
+column of the `repo` record is `no-remote` or `failed`, present the local-only result
+and say so (the notes carry the reason). Do not fill the gap with another client.
 
 # 1. Run the script
 
@@ -35,12 +36,13 @@ The output is tab-separated; column 1 is the record type, and a `# ` line names 
 columns before each type. Turn it into:
 
 - **Header** — from the `repo` record: repository, base, where it was invoked from
-  (`main` or `worktree:<name>`), and the `fetch` / `gh` states.
+  (`main` or `worktree:<name>`), the `fetch` state, and the `forge` column (`github`,
+  `gitlab`, `no-remote`, or `failed`).
 - **In flight** — one markdown table from the `row` records with the columns
   Issue | PR | checks | review | branch | worktree | agent | state | next | reason.
   `checks` (`pass` / `fail` / `pending` / `none` / `?`) and `review` are the facts the
   `next` column was decided from; keep them so the reader can see why. `none` means the
-  Pull Request has no checks at all (Actions disabled or no workflows), which is normal
+  Pull Request has no checks at all (CI disabled or no workflows / pipeline), which is normal
   and never a reason to wait. Keep `next` verbatim. Order: rows whose `next` is a skill
   command other than `/worktree-sweep` first, then `wait`, then `/worktree-sweep`, then
   `-` (done). Omit the table when there are no rows.
@@ -48,7 +50,7 @@ columns before each type. Turn it into:
   options, requested issues, repository, resolved/total. Add one line of progress read
   from that file's `srow` records (the raw table rows) or, if they are not enough, from
   the file itself. Label it as what the file claims. The table above is what git and
-  GitHub actually show; when they disagree, the table wins.
+  the forge actually show; when they disagree, the table wins.
 - **Notes** — every `note` record, verbatim.
 - The `summary` record as the last line.
 
@@ -67,7 +69,7 @@ Always end with this, in the user's language:
 - A review left by `pr-review --post` is a comment, not a review decision, so a Pull
   Request keeps showing `/pr-review N` after it. Read the comments before reviewing
   again.
-- GitHub state is as of this run. Nothing was modified.
+- Forge state is as of this run. Nothing was modified.
 
 # 4. Do not act
 

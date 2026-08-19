@@ -14,7 +14,13 @@ Do not push commits.
 Do not merge the Pull Request.
 Do not write to GitHub, except the single comment that `--post` asks for (step 10).
 
-All GitHub operations (reading, searching, and creating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. Before the first `gh` call, run `gh auth status`; if `gh` is unavailable or not authenticated, stop and report instead of falling back.
+All forge operations (reading Pull Requests and Issues, and the one comment `--post`
+writes) go through the forge CLI: `gh` on GitHub, `glab` on GitLab. Before the first such
+call, run `sh ~/.claude/scripts/forge-detect.sh`; it prints one line,
+`<forge> <host> <path>`. On `github`, run the `gh` commands below as written. On `gitlab`,
+read `~/.claude/forge/gitlab.md` once and run the `glab` equivalent it gives for each `gh`
+command below, following its degrade rules where it lists none. If the script fails, stop
+and report its message instead of falling back to another client.
 
 # 0. Parse the arguments
 

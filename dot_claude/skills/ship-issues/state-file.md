@@ -13,9 +13,10 @@ Template for the run file that `ship-issues` writes to
   and the branch name appears somewhere in the row
 - a line that begins with `DONE` (or `**DONE**`) once the run has finished
 
-`<repo-name>` in the file name is the GitHub repository name (the part after `/` in
-`nameWithOwner`); `work-status.sh` matches a file to the repository by that prefix or by
-the `- repository:` header, so a clone under another directory name still shows up.
+`<repo-name>` in the file name is the last segment of the repository path
+`forge-detect.sh` prints (`owner/repo` on GitHub, `group/.../project` on GitLab), and
+`- repository:` is that whole path; `work-status.sh` matches a file to the repository by
+that prefix or by the header, so a clone under another directory name still shows up.
 
 Keep the keys, the column order, and the `DONE` marker exactly as they are. Add free
 text only below the table (a `## Log` section), never between the header lines and the

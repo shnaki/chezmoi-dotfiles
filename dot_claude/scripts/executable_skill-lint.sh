@@ -16,8 +16,9 @@
 #                 for that skill, and vice versa (a missing argument-hint with options in
 #                 the row is reported too); every option the body documents as a bullet
 #                 (`- `--flag` ...`) or a heading (`### `--flag``) is in argument-hint
-#   references    every `~/.claude/skills/...` and `~/.claude/scripts/...` path in any
-#                 *.md under the skill resolves to an existing file or directory
+#   references    every `~/.claude/skills/...`, `~/.claude/scripts/...` and
+#                 `~/.claude/forge/...` path in any *.md under the skill resolves to an
+#                 existing file or directory
 #   language      the SKILL.md body (after the frontmatter) contains no Japanese
 #                 characters (kana, kanji, CJK punctuation, full-width forms); other
 #                 files in the skill directory are not checked
@@ -28,6 +29,10 @@
 #                 `](<relative>.md#anchor)` link points at a heading that exists
 # And for the scripts directory next to the skills (`../scripts`):
 #   scripts       every *.sh there is referenced from at least one *.md under the skills
+# And for the GitLab translation table (`../forge/gitlab.md`):
+#   forge         every `gh <command> <subcommand>` (and `gh api`) that any *.md under
+#                 the skills uses has a `### gh <command> <subcommand>` heading there,
+#                 and no heading there is left unused by the skills
 #
 # The skills directory may be the deployed one (~/.claude/skills) or the chezmoi source
 # (.../dot_claude/skills). In the source layout, `~/.claude/X` resolves under dot_claude/
@@ -44,8 +49,9 @@ usage() {
 Usage: skill-lint.sh [SKILLS_DIR]
 
 Checks SKILL.md frontmatter, argument-hint vs README table, ~/.claude/... path
-references, English-only SKILL.md bodies, README table coverage and anchors, and
-that every script next to the skills is referenced.
+references, English-only SKILL.md bodies, README table coverage and anchors,
+that every script next to the skills is referenced, and that ../forge/gitlab.md
+has a heading for every gh command the skills use.
 SKILLS_DIR defaults to ~/.claude/skills.
 EOF
 }
@@ -65,6 +71,7 @@ case "$SKILLS" in
     *)                   CLAUDE_HOME=${SKILLS%/skills}; SOURCE_LAYOUT=0 ;;
 esac
 SCRIPTS_DIR="$CLAUDE_HOME/scripts"
+FORGE_DOC="$CLAUDE_HOME/forge/gitlab.md"
 
 PROBLEMS=0
 problem() {  # problem FILE LINE MESSAGE
@@ -84,10 +91,10 @@ resolve_ref() {
     return 1
 }
 
-# check_refs FILE -> reports every `~/.claude/(skills|scripts)/...` reference in FILE
-# that does not resolve.
+# check_refs FILE -> reports every `~/.claude/(skills|scripts|forge)/...` reference in
+# FILE that does not resolve.
 check_refs() {
-    grep -n -o -E '~/\.claude/(skills|scripts)/[A-Za-z0-9_./-]*' "$1" 2>/dev/null | tr -d '\r' \
+    grep -n -o -E '~/\.claude/(skills|scripts|forge)/[A-Za-z0-9_./-]*' "$1" 2>/dev/null | tr -d '\r' \
         | sed 's/[.]*$//' | sort -u | while IFS=: read -r ln ref; do
             resolve_ref "$ref" >/dev/null || printf '%s:%s: reference does not resolve: %s\n' "$1" "$ln" "$ref"
         done > "$TABLE.refs" || true
@@ -140,7 +147,7 @@ EOF
 JA_PATTERN=$(printf '\343[\200-\203]|[\344-\351]|\357[\274-\275]')
 
 # README table: `| [`name`](#name) | ... | args | ... |` -> line<TAB>name<TAB>args
-TABLE=$(mktemp); trap 'rm -f "$TABLE" "$TABLE.refs" "$TABLE.anchors" "$TABLE.opts"' EXIT
+TABLE=$(mktemp); trap 'rm -f "$TABLE" "$TABLE.refs" "$TABLE.anchors" "$TABLE.opts" "$TABLE.used" "$TABLE.headed"' EXIT
 if [ -f "$README" ]; then
     grep -n -E '^\| \[`[^`]+`\]\(#[^)]+\)' "$README" | tr -d '\r' \
         | awk -F'|' '{ ln = $1; sub(/:.*$/, "", ln); n = $2; sub(/^ *\[`/, "", n); sub(/`.*$/, "", n); a = $4; gsub(/^ +| +$/, "", a); print ln "\t" n "\t" a }' > "$TABLE"
@@ -264,6 +271,32 @@ if [ -d "$SCRIPTS_DIR" ]; then
             problem "$s" 0 "script is not referenced from any *.md under $SKILLS"
         fi
     done
+fi
+
+# --- gh commands vs the GitLab translation table ---------------------------------------
+# Every `gh <cmd> <sub>` the skills run (in prose or code blocks) needs a `### gh <cmd>
+# <sub>` section in forge/gitlab.md, or the GitLab path has nothing to translate it with.
+# `gh api` is the one two-word form. The reverse (a heading nobody uses) is reported so
+# the table does not accumulate dead rows. The README describes the skills rather than
+# instructing them, so it is not scanned.
+GH_CMDS='gh (auth|repo|pr|issue|label|release|run|workflow|search) [a-z][a-z-]*'
+if [ ! -f "$FORGE_DOC" ]; then
+    problem "$FORGE_DOC" 0 "GitLab translation table is missing"
+else
+    grep -rhoE "(^|[^A-Za-z0-9_-])($GH_CMDS|gh api)" "$SKILLS" --include='*.md' --exclude=README.md \
+        | sed 's/^[^g]*//' | tr -d '\r' | sort -u > "$TABLE.used"
+    grep -E "^### gh " "$FORGE_DOC" | sed 's/^### //' | tr -d '\r' | sort -u > "$TABLE.headed"
+    while IFS= read -r c; do
+        [ -n "$c" ] || continue
+        grep -qxF -- "$c" "$TABLE.headed" \
+            || problem "$FORGE_DOC" 0 "no '### $c' section, but the skills use it"
+    done < "$TABLE.used"
+    while IFS= read -r c; do
+        [ -n "$c" ] || continue
+        grep -qxF -- "$c" "$TABLE.used" \
+            || problem "$FORGE_DOC" "$(grep -n -F "### $c" "$FORGE_DOC" | head -n 1 | cut -d: -f1)" "section '### $c' is not used by any skill"
+    done < "$TABLE.headed"
+    rm -f "$TABLE.used" "$TABLE.headed"
 fi
 
 if [ "$PROBLEMS" -eq 0 ]; then

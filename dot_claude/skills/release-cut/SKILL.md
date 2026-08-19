@@ -15,9 +15,12 @@ This skill does not change the code. It does not commit, does not edit `CHANGELO
 or version files, and does not push. The tag is created by `gh release create` on
 GitHub, never with `git tag` / `git push --tags` here.
 
-All GitHub operations go through the GitHub CLI (`gh`). Do not use another GitHub
-client. Before the first `gh` call, run `gh auth status`; if `gh` is unavailable or not
-authenticated, stop and report instead of falling back.
+All forge operations go through the forge CLI: `gh` on GitHub, `glab` on GitLab. Before
+the first such call, run `sh ~/.claude/scripts/forge-detect.sh`; it prints one line,
+`<forge> <host> <path>`. On `github`, run the `gh` commands below as written. On `gitlab`,
+read `~/.claude/forge/gitlab.md` once and run the `glab` equivalent it gives for each `gh`
+command below, following its degrade rules where it lists none. If the script fails, stop
+and report its message instead of falling back to another client.
 
 # 0. Parse the arguments
 
@@ -28,7 +31,8 @@ Options:
 - `--tag <version>` — use this tag instead of the proposed one. Accept `1.4.0` and
   `v1.4.0`; keep the repository's own prefix convention (step 1).
 - `--draft` — create the release as a draft, so it can be edited on GitHub before it is
-  published.
+  published. GitLab has no draft releases: on `gitlab`, stop and report that instead of
+  creating a published release.
 - `-R owner/repo` — target another repository. Pass it to every `gh` call; local `git`
   commands then need a checkout of that repository and are skipped when there is none
   (say so, and rely on `gh` alone).
@@ -122,7 +126,7 @@ there is no precedent:
 ## Other
 - <subject> (#N)          docs / refactor / perf / test / chore / build / ci / style, and unclassified
 
-**Full changelog**: <compare URL: https://github.com/<owner>/<repo>/compare/<previous-tag>...<new-tag>>
+**Full changelog**: <compare URL: https://<host>/<path>/compare/<previous-tag>...<new-tag> on GitHub, https://<host>/<path>/-/compare/<previous-tag>...<new-tag> on GitLab>
 ```
 
 Rules for the notes:

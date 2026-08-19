@@ -13,9 +13,12 @@ This skill only reads. It is the step before `/pr-fix` (which fixes what the Pul
 caused) and `/triage-notes` (which files an Issue for what it did not). It hands the
 classification to those; it does not do their work.
 
-All GitHub operations go through the GitHub CLI (`gh`). Do not use another GitHub
-client. Before the first `gh` call, run `gh auth status`; if `gh` is unavailable or not
-authenticated, stop and report instead of falling back.
+All forge operations go through the forge CLI: `gh` on GitHub, `glab` on GitLab. Before
+the first such call, run `sh ~/.claude/scripts/forge-detect.sh`; it prints one line,
+`<forge> <host> <path>`. On `github`, run the `gh` commands below as written. On `gitlab`,
+read `~/.claude/forge/gitlab.md` once and run the `glab` equivalent it gives for each `gh`
+command below, following its degrade rules where it lists none. If the script fails, stop
+and report its message instead of falling back to another client.
 
 # Core rules
 
@@ -23,7 +26,10 @@ authenticated, stop and report instead of falling back.
   `gh pr comment`, or any other write. Do not create branches, worktrees, or commits,
   and do not fix anything. Fixing is `pr-fix`.
 - Do not use `gh api`, even for reads. `gh pr view`, `gh pr checks`, `gh run list`,
-  `gh run view`, and `gh workflow list` are enough.
+  `gh run view`, and `gh workflow list` are enough. On GitLab, follow the *ci-review on
+  GitLab* section of `~/.claude/forge/gitlab.md`: pipelines and jobs replace workflow
+  runs and jobs, and its `glab api -X GET` reads stand in for `gh`'s own JSON; the
+  classification and every stop rule below are unchanged.
 - Every failing check gets exactly one class. When the evidence does not decide, use
   `needs investigation` and say what would decide it. Never call a failure `pr-caused`
   or `flaky` by guessing.

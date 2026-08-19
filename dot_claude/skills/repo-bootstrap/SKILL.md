@@ -12,9 +12,12 @@ the bodies those skills write, and a place for repository instructions.
 Invoking this skill is the authorization to run `label-sync` and to add files. It never
 overwrites a file that exists, and it never changes repository settings on GitHub.
 
-All GitHub operations go through the GitHub CLI (`gh`). Do not use another GitHub
-client. Before the first `gh` call, run `gh auth status`; if `gh` is unavailable or not
-authenticated, stop and report instead of falling back.
+All forge operations go through the forge CLI: `gh` on GitHub, `glab` on GitLab. Before
+the first such call, run `sh ~/.claude/scripts/forge-detect.sh`; it prints one line,
+`<forge> <host> <path>`. On `github`, run the `gh` commands below as written. On `gitlab`,
+read `~/.claude/forge/gitlab.md` once and run the `glab` equivalent it gives for each `gh`
+command below, following its degrade rules where it lists none. If the script fails, stop
+and report its message instead of falling back to another client.
 
 # Core rules
 
@@ -23,8 +26,10 @@ authenticated, stop and report instead of falling back.
 - Local files are committed on the current branch following the `cm` skill workflow,
   in one commit, and not pushed. Opening the Pull Request is `/pr-ready`.
 - Never edit repository settings (branch protection, Actions permissions, merge
-  methods): those need `gh api` writes or the web UI. Report what to set and where.
-- Labels go through `~/.claude/scripts/label-sync.sh`; do not run `gh label` here.
+  methods): those need `gh api` / `glab api` writes or the web UI. Report what to set
+  and where.
+- Labels go through `~/.claude/scripts/label-sync.sh`; do not run `gh label` or
+  `glab label` here.
 - Templates are written in the language the repository's Issues and Pull Requests use
   (English when the repository has none yet and no other convention). No tool traces.
 
@@ -51,6 +56,11 @@ And on disk: `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`, `.github/PULL_REQUEST_
 (or `pull_request_template.md`, or the `PULL_REQUEST_TEMPLATE/` directory),
 `.github/ISSUE_TEMPLATE/`, `.gitignore`, and enough of the tree to name the language and
 build tool (`package.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, `Makefile`, …).
+On GitLab the template paths are `.gitlab/merge_request_templates/Default.md` and
+`.gitlab/issue_templates/{bug,feature}.md` (with no `labels:` front matter — GitLab
+templates carry no front matter; add a `/label ~"<label>"` quick action line at the
+end instead), and "Actions" means the pipeline; read every `.github/...` path in this
+skill that way.
 
 Stop and report when the working tree is dirty: the bootstrap commit must contain only
 what this skill adds.
@@ -76,7 +86,7 @@ Print what will happen, one line per item, before doing anything:
   (default branch, whether squash merging is the convention, from step 1)
 - **`.gitignore`** — "exists, kept" or "missing: add one for <language> by hand"
   (GitHub's templates need `gh api`; do not fetch them here)
-- **settings a human sets on GitHub** — one line each, only when relevant: enable
+- **settings a human sets on the forge** — one line each, only when relevant: enable
   "Automatically delete head branches" when `deleteBranchOnMerge` is false (`pr-land`
   deletes explicitly, but the setting removes the race); allow squash merging when it
   is off and the convention wants it; branch protection with required review if more
@@ -102,7 +112,8 @@ If the script is missing, skip the labels, say so, and continue with the files.
 
 Return:
 
-- repository, visibility, default branch, Actions state (`gh workflow list` empty or not)
+- repository, visibility, default branch, CI state (`gh workflow list` empty or not; on
+  GitLab, whether `.gitlab-ci.yml` exists and a pipeline has run)
 - labels: created / renamed / kept counts, and unmanaged ones by name
 - files created (paths) and files kept because they existed
 - the commit hash, and that `/pr-ready` opens the Pull Request

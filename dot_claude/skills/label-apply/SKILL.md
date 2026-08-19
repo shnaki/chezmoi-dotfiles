@@ -13,9 +13,12 @@ ask for confirmation again before applying, unless step 4 says so.
 The rules for choosing labels live in `~/.claude/skills/label-apply/labeling-rules.md`.
 Read that file first and follow it; do not paraphrase or extend it here.
 
-All GitHub operations go through the GitHub CLI (`gh`). Do not use another GitHub
-client. Before the first `gh` call, run `gh auth status`; if `gh` is unavailable or not
-authenticated, stop and report instead of falling back.
+All forge operations go through the forge CLI: `gh` on GitHub, `glab` on GitLab. Before
+the first such call, run `sh ~/.claude/scripts/forge-detect.sh`; it prints one line,
+`<forge> <host> <path>`. On `github`, run the `gh` commands below as written. On `gitlab`,
+read `~/.claude/forge/gitlab.md` once and run the `glab` equivalent it gives for each `gh`
+command below, following its degrade rules where it lists none. If the script fails, stop
+and report its message instead of falling back to another client.
 
 # Core rules
 

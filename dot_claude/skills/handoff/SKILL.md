@@ -33,9 +33,11 @@ Interpret `$ARGUMENTS`:
 - Do not name the tools or models used to do the work, in the document or in the patch.
 - Use paths relative to the repository root. Record the absolute root path once, in
   Repository state, and nowhere else.
-- All GitHub reads go through the GitHub CLI (`gh`). Check `gh auth status` once before
-  the first read; if `gh` is unavailable or not authenticated, do not stop: record the
-  affected fields as unverified and continue.
+- All forge reads go through the forge CLI: `gh` on GitHub, `glab` on GitLab. Run
+  `sh ~/.claude/scripts/forge-detect.sh` once before the first read; it prints
+  `<forge> <host> <path>`. On `github`, run the `gh` commands below as written; on
+  `gitlab`, read `~/.claude/forge/gitlab.md` once and run the `glab` equivalent it gives.
+  If the script fails, do not stop: record the affected fields as unverified and continue.
 
 # 1. Collect the repository state
 

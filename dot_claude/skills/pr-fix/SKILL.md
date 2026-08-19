@@ -12,7 +12,13 @@ checks and conflicts with the base branch.
 This skill modifies the Pull Request branch. It does not merge, and it does not post
 anything to GitHub.
 
-All GitHub operations (reading, searching, and updating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. Before the first `gh` call, run `gh auth status`; if `gh` is unavailable or not authenticated, stop and report instead of falling back.
+All forge operations (reading, searching, and updating Issues and Pull Requests) go
+through the forge CLI: `gh` on GitHub, `glab` on GitLab. Before the first such call, run
+`sh ~/.claude/scripts/forge-detect.sh`; it prints one line, `<forge> <host> <path>`. On
+`github`, run the `gh` commands below as written. On `gitlab`, read
+`~/.claude/forge/gitlab.md` once and run the `glab` equivalent it gives for each `gh`
+command below, following its degrade rules where it lists none. If the script fails, stop
+and report its message instead of falling back to another client.
 
 # Core rules
 
@@ -80,13 +86,14 @@ findings like a human review. For inline review comments, read them with a GET r
 only:
 
 ```bash
-gh api "repos/$(gh repo view --json nameWithOwner -q .nameWithOwner)/pulls/<N>/comments" --paginate
+gh api "repos/<path>/pulls/<N>/comments" --paginate
 ```
 
-This is the one `gh api` call in these skills, because `gh` has no other way to list
-inline review comments. It is not in the permission allow-list, so it prompts every
-time; skip it when the user declines and say so. Never use `gh api` with a method that
-writes.
+(`<path>` is what `forge-detect.sh` printed.) This is the one `gh api` call in these
+skills, because `gh` has no other way to list inline review comments. It is not in the
+permission allow-list, so it prompts every time; skip it when the user declines and say
+so. Never use `gh api` (or `glab api`) with a method that writes; on GitLab the read
+form is `glab api -X GET`, as `gitlab.md` gives it.
 
 4. conflicts with the base branch:
 

@@ -15,10 +15,13 @@ way to look first).
 This skill is responsible for investigation and Issue design only. Do not implement
 any changes. Do not create branches or Pull Requests.
 
-All GitHub operations (reading, searching, editing, and creating Issues) go through
-the GitHub CLI (`gh`). Do not use another GitHub client. Before the first `gh` call,
-run `gh auth status`; if `gh` is unavailable or not authenticated, stop and report
-instead of falling back.
+All forge operations (reading, searching, editing, and creating Issues) go through the
+forge CLI: `gh` on GitHub, `glab` on GitLab. Before the first such call, run
+`sh ~/.claude/scripts/forge-detect.sh`; it prints one line, `<forge> <host> <path>`. On
+`github`, run the `gh` commands below as written. On `gitlab`, read
+`~/.claude/forge/gitlab.md` once and run the `glab` equivalent it gives for each `gh`
+command below, following its degrade rules where it lists none. If the script fails, stop
+and report its message instead of falling back to another client.
 
 Follow all repository-specific instructions in:
 

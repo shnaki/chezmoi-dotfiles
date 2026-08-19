@@ -44,18 +44,26 @@ Issues
 - Do not modify Issue requirements merely to make parallelization easier.
 - Workers never merge. Merging happens only in the orchestrator, only with `--merge`, and only through the `pr-land` workflow.
 - Keep detailed implementation work out of the orchestrator context.
-- All GitHub operations (reading, searching, and creating Issues and Pull Requests) go through the GitHub CLI (`gh`). Do not use another GitHub client. Before the first `gh` call, run `gh auth status`; if `gh` is unavailable or not authenticated, stop and report instead of falling back.
+- All forge operations (reading, searching, and creating Issues and Pull Requests) go
+  through the forge CLI: `gh` on GitHub, `glab` on GitLab. Before the first such call, run
+  `sh ~/.claude/scripts/forge-detect.sh`; it prints one line, `<forge> <host> <path>`. On
+  `github`, run the `gh` commands below as written. On `gitlab`, read
+  `~/.claude/forge/gitlab.md` once and run the `glab` equivalent it gives for each `gh`
+  command below, following its degrade rules where it lists none. If the script fails,
+  stop and report its message instead of falling back to another client. Workers get the
+  same instruction through the worker prompt (step 7).
 
 # 1. Parse the requested Issues
 
-Interpret `$ARGUMENTS` as the set of GitHub Issue numbers to process, plus options.
+Interpret `$ARGUMENTS` as the set of Issue numbers to process, plus options.
 
 Accept common forms such as:
 
 - `101 102 103`
 - `#101 #102 #103`
 - `101,102,103`
-- full Issue URLs (`https://github.com/<owner>/<repo>/issues/101`)
+- full Issue URLs on the repository's forge host (`https://<host>/<path>/issues/101`,
+  `https://<host>/<path>/-/issues/101`)
 
 Strip any leading `#` so a number is never interpolated as `##101`.
 
@@ -69,12 +77,17 @@ Then establish the repository facts every later step relies on:
   (the repository's own instructions may name a different integration branch; use that
   when they do). This is `<base-branch>` in the worker prompt and `- base:` in the state
   file
-- the repository name for the state file: the part after `/` in
-  `gh repo view --json nameWithOwner --jq .nameWithOwner`; only when `gh` cannot answer,
-  the checkout's directory name
+- the repository path (`<path>` from `forge-detect.sh`, e.g. `owner/repo`): it is
+  `<owner/repo>` in the worker prompt and `- repository:` in the state file, and its
+  last segment is the repository name in the state file's name; only when the script
+  cannot answer, the checkout's directory name
 - how the repository verifies changes and any toolchain constraint (CLAUDE.md,
   `.claude/rules/`, `package.json` scripts, `Makefile`, CI configuration): these fill
   `<verification-command>` and `<toolchain-note>` in the worker prompt
+- the forge commands for the worker prompt: `<forge-cli>`, `<issue-view-command>`,
+  `<pr-list-command>`, and `<pr-create-command>` are the `gh` forms the prompt template
+  names on `github`, and the `glab` equivalents from `~/.claude/forge/gitlab.md` on
+  `gitlab`
 
 ## Options
 

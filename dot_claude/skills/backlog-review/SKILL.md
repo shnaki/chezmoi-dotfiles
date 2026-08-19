@@ -13,9 +13,12 @@ This skill only reads. It is the step before `/ship-issues` (which implements th
 ones) and `/label-apply` (which fixes labels). It hands numbers to those; it does not do
 their work.
 
-All GitHub operations go through the GitHub CLI (`gh`). Do not use another GitHub
-client. Before the first `gh` call, run `gh auth status`; if `gh` is unavailable or not
-authenticated, stop and report instead of falling back.
+All forge operations go through the forge CLI: `gh` on GitHub, `glab` on GitLab. Before
+the first such call, run `sh ~/.claude/scripts/forge-detect.sh`; it prints one line,
+`<forge> <host> <path>`. On `github`, run the `gh` commands below as written. On `gitlab`,
+read `~/.claude/forge/gitlab.md` once and run the `glab` equivalent it gives for each `gh`
+command below, following its degrade rules where it lists none. If the script fails, stop
+and report its message instead of falling back to another client.
 
 # Core rules
 
@@ -23,7 +26,9 @@ authenticated, stop and report instead of falling back.
   `gh issue pin`, `gh label`, or any other write. Do not create branches, worktrees, or
   commits, and do not implement anything.
 - Do not use `gh api`, even for reads. Cross-references come from the Pull Request
-  index (step 2) instead of the Issue timeline.
+  index (step 2) instead of the Issue timeline. (On GitLab, the `glab api -X GET` reads
+  `gitlab.md` lists for these commands are the equivalent of `gh`'s own JSON, not an
+  exception to this rule; write forms stay forbidden.)
 - Every Issue gets exactly one class. When the evidence does not decide, use
   `needs investigation` and say what is missing. Never promote an Issue to `ready` by
   guessing.

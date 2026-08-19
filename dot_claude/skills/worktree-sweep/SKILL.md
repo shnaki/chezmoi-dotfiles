@@ -41,11 +41,12 @@ The script intentionally keeps anything holding work that is not on a remote:
 - worktrees whose HEAD is on no remote branch
 - branches whose upstream is gone but that are not merged and have no merged Pull Request
 
-For that last rule the script asks GitHub through `gh pr list`. When `gh` is missing,
-unauthenticated, or offline it cannot answer, and the script keeps the branch with
-`gh could not confirm` rather than `no merged PR found`. Report that wording as it is:
-it means "unknown", not "checked and unmerged". Do not query GitHub another way to
-fill the gap.
+For that last rule the script asks the forge through `gh pr list` (GitHub) or
+`glab mr list` (GitLab), picking the CLI with `~/.claude/scripts/forge-detect.sh`. When
+the CLI is missing, unauthenticated, or offline it cannot answer, and the script keeps
+the branch with `... could not confirm` rather than `no merged PR found`. Report that
+wording as it is: it means "unknown", not "checked and unmerged". Do not query the forge
+another way to fill the gap.
 
 When run from inside an agent worktree the script skips that repository entirely and
 says so (`skipped ...: inside an agent worktree`); run it from the main checkout.

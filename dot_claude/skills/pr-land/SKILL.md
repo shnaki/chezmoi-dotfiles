@@ -14,7 +14,13 @@ That authorization does not extend to forcing a merge past a problem. Every stop
 condition below is a hard stop: report it and end. Do not fix, override, or work
 around it here. Fixing review findings and failing checks is the job of `pr-fix`.
 
-All GitHub operations (reading, searching, merging Pull Requests and reading Issues) go through the GitHub CLI (`gh`). Do not use another GitHub client. Before the first `gh` call, run `gh auth status`; if `gh` is unavailable or not authenticated, stop and report instead of falling back.
+All forge operations (reading, searching, merging Pull Requests and reading Issues) go
+through the forge CLI: `gh` on GitHub, `glab` on GitLab. Before the first such call, run
+`sh ~/.claude/scripts/forge-detect.sh`; it prints one line, `<forge> <host> <path>`. On
+`github`, run the `gh` commands below as written. On `gitlab`, read
+`~/.claude/forge/gitlab.md` once and run the `glab` equivalent it gives for each `gh`
+command below, following its degrade rules where it lists none. If the script fails, stop
+and report its message instead of falling back to another client.
 
 # Core rules
 
@@ -211,8 +217,8 @@ Take `<headRefName>` from step 2.
 This is the one place where deleting a branch with your own `git` command is correct: it
 is the remote branch of a Pull Request you just merged, not a local branch or a worktree,
 so it is not the sweeper's job. Use `git ls-remote` and `git push origin --delete`, not
-`gh api`: the read form is not in the permission allow-list and prompts every time, and
-the `-X DELETE` form gets blocked by the permission classifier.
+`gh api` or `glab api`: the read form is not in the permission allow-list and prompts
+every time, and the `-X DELETE` form gets blocked by the permission classifier.
 
 If the delete is rejected (for example by branch protection), report it and continue; do
 not force it.
