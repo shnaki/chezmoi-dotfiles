@@ -2,8 +2,10 @@
 # work-status.sh - Report what is in flight in a repository and what to run next.
 #
 # Long-running skills (ship-issues above all) leave their state in four places: open
-# Pull Requests on GitHub, agent worktrees under .claude/worktrees/, local branches, and
-# ship-issues run files under ~/.claude/ship-issues/. This script reads all four, joins
+# Pull Requests on the forge (GitHub through gh, or GitLab Merge Requests through glab;
+# forge-detect.sh decides which), agent worktrees under .claude/worktrees/, local
+# branches, and ship-issues run files under ~/.claude/ship-issues/. This script reads
+# all four, joins
 # them by branch name, and prints one row per unit of work with a `next` column naming
 # the skill to invoke (/pr-fix, /ci-review, /pr-review, /pr-land, /ship-issues --resume,
 # /pr-ready, /worktree-sweep), `wait`, or `-` (done).
@@ -45,7 +47,7 @@
 #
 # Output is tab-separated, one record per line, the record type in column 1. A `# ` line
 # names the columns before the first record of each type:
-#   repo     root  repository  base  invoked  fetch  gh
+#   repo     root  repository  base  invoked  fetch  forge   (github | gitlab | no-remote | failed)
 #   row      key  issue  pr  pr_state  checks  review  branch  ahead/behind  worktree  agent  state  next  reason
 #   state    file  started  options  issues  repository  resolved/total
 #   srow     file  <raw table row copied from the state file>
@@ -169,33 +171,30 @@ base_ref() {
     printf '%s' "$_b"
 }
 
-# --- gh and remote -----------------------------------------------------------
+# --- forge CLI and remote -----------------------------------------------------
 
-GH_STATE=ok
+# forge-detect.sh decides whether gh (GitHub) or glab (GitLab) answers for this
+# repository and parses owner/repo (or group/.../project) from the origin URL.
+_lib=$(dirname "$0")/forge-detect.sh
+[ -f "$_lib" ] || _lib=$(dirname "$0")/executable_forge-detect.sh
+[ -f "$_lib" ] || _lib=$HOME/.claude/scripts/forge-detect.sh
+. "$_lib"
+
+FORGE_STATE=ok      # ok | no-remote | failed (FORGE_ERROR says why)
+FORGE=""
 NWO=""
 HAS_REMOTE=0
 if git -C "$ROOT" remote get-url origin >/dev/null 2>&1; then
     HAS_REMOTE=1
 fi
 
-if ! command -v gh >/dev/null 2>&1; then
-    GH_STATE=missing
-elif ! gh auth status >/dev/null 2>&1; then
-    GH_STATE=unauth
-elif [ "$HAS_REMOTE" -eq 0 ]; then
-    GH_STATE=no-remote
+if [ "$HAS_REMOTE" -eq 0 ]; then
+    FORGE_STATE=no-remote
+elif forge_detect "$ROOT"; then
+    NWO=$FORGE_PATH
 else
-    NWO=$(cd "$ROOT" && gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null | tr -d '\r') || NWO=""
-    [ -n "$NWO" ] || GH_STATE=failed
-fi
-
-if [ -z "$NWO" ] && [ "$HAS_REMOTE" -eq 1 ]; then
-    NWO=$(git -C "$ROOT" remote get-url origin 2>/dev/null |
-        sed -e 's#[/:]*$##' -e 's#\.git$##' -e 's#.*[:/]\([^/]*/[^/]*\)$#\1#')
-    case "$NWO" in
-        */*) ;;
-        *) NWO="" ;;
-    esac
+    FORGE_STATE=failed
+    NWO=$FORGE_PATH   # parsed from the URL even when no CLI can answer
 fi
 REPO_NAME=${NWO##*/}
 [ -n "$REPO_NAME" ] || REPO_NAME=${ROOT##*/}
@@ -225,17 +224,19 @@ case "$BASE" in
         ;;
 esac
 
-case "$GH_STATE" in
+case "$FORGE_STATE" in
     ok) ;;
-    missing) note "gh is not installed: PR state and merged-PR lookup skipped; GitHub columns show ?" ;;
-    unauth) note "gh is not authenticated: PR state and merged-PR lookup skipped; GitHub columns show ?" ;;
-    no-remote) note "no origin remote: PR state and merged-PR lookup skipped; GitHub columns show ?" ;;
-    failed) note "gh repo view failed: PR state and merged-PR lookup skipped; GitHub columns show ?" ;;
+    no-remote) note "no origin remote: PR state and merged-PR lookup skipped; forge columns show ?" ;;
+    failed) note "$FORGE_ERROR: PR state and merged-PR lookup skipped; forge columns show ?" ;;
 esac
 
 # --- data: open Pull Requests -----------------------------------------------
 
-# checks: CheckRun entries carry status/conclusion, StatusContext entries carry state.
+# Both forges are normalised to the same TSV columns and the same GitHub-style values
+# (mergeable, mergeStateStatus, reviewDecision, checks), so everything after this
+# section is forge-agnostic.
+
+# GitHub. checks: CheckRun entries carry status/conclusion, StatusContext entries carry state.
 PR_JQ='.[] | [
   .number, .headRefName,
   (if .isDraft then 1 else 0 end),
@@ -250,17 +251,70 @@ PR_JQ='.[] | [
   ((.closingIssuesReferences // []) | map(.number | tostring) | join(",") | if . == "" then "-" else . end),
   .updatedAt, .url ] | @tsv'
 
-if [ "$GH_STATE" = ok ]; then
-    if _out=$(cd "$ROOT" && gh pr list --state open --limit "$PR_LIMIT" \
-            --json number,headRefName,isDraft,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,closingIssuesReferences,updatedAt,url \
-            --jq "$PR_JQ" 2>/dev/null); then
+# GitLab. The MR list payload has draft / has_conflicts / detailed_merge_status but no
+# pipeline and no closing-issue list: the pipeline is fetched per MR below, and closing
+# Issues are read from `Closes #N` in the description (which is also what GitLab acts on).
+# The `checks` column is left as `?` here and filled in by mr_checks.
+MR_CLOSES='((.description // "") | [match("(?i)\\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\\s*:?\\s*#([0-9]+)"; "g").captures[0].string] | unique | join(",") | if . == "" then "-" else . end)'
+MR_JQ='.[] | [
+  .iid, .source_branch,
+  (if .draft then 1 else 0 end),
+  (if .has_conflicts then "CONFLICTING"
+   elif ((.detailed_merge_status // "unchecked") | IN("unchecked","checking","preparing")) then "UNKNOWN"
+   else "MERGEABLE" end),
+  ((.detailed_merge_status // "unchecked")
+     | if . == "mergeable" then "CLEAN"
+       elif . == "conflict" then "DIRTY"
+       elif . == "need_rebase" then "BEHIND"
+       elif IN("ci_must_pass","ci_still_running") then "UNSTABLE"
+       elif IN("unchecked","checking","preparing") then "UNKNOWN"
+       else "BLOCKED" end),
+  ((.detailed_merge_status // "")
+     | if . == "requested_changes" then "CHANGES_REQUESTED"
+       elif . == "not_approved" then "REVIEW_REQUIRED"
+       else "NONE" end),
+  "?",
+  '"$MR_CLOSES"',
+  .updated_at, .web_url ] | @tsv'
+
+# mr_checks IID -> pass | fail | pending | none, from the head pipeline of the MR.
+mr_checks() {
+    _st=$(cd "$ROOT" && glab ci get --merge-request "$1" --output json --jq '.status // ""' 2>/dev/null | tr -d '\r"') || _st=""
+    case "$_st" in
+        "") printf none ;;
+        success|skipped) printf pass ;;
+        failed|canceled) printf fail ;;
+        *) printf pending ;;
+    esac
+}
+
+if [ "$FORGE_STATE" = ok ]; then
+    case "$FORGE" in
+        github)
+            _out=$(cd "$ROOT" && gh pr list --state open --limit "$PR_LIMIT" \
+                --json number,headRefName,isDraft,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,closingIssuesReferences,updatedAt,url \
+                --jq "$PR_JQ" 2>/dev/null) || _out=__failed__
+            ;;
+        gitlab)
+            # The GitLab API serves at most 100 items per page.
+            [ "$PR_LIMIT" -le 100 ] || PR_LIMIT=100
+            _out=$(cd "$ROOT" && glab mr list --per-page "$PR_LIMIT" --output json --jq "$MR_JQ" 2>/dev/null) || _out=__failed__
+            if [ "$_out" != __failed__ ]; then
+                _out=$(printf '%s\n' "$_out" | tr -d '\r' | glab_tsv | grep -v '^$' | while IFS="$TAB" read -r _n _h _d _m _ms _r _c _i _u _url; do
+                    [ -n "$_n" ] || continue
+                    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$_n" "$_h" "$_d" "$_m" "$_ms" "$_r" "$(mr_checks "$_n")" "$_i" "$_u" "$_url"
+                done)
+            fi
+            ;;
+    esac
+    if [ "$_out" != __failed__ ]; then
         printf '%s\n' "$_out" | tr -d '\r' | grep -v '^$' > "$PRS" || true
         if [ "$(wc -l < "$PRS" | tr -d " ")" -ge "$PR_LIMIT" ]; then
             note "open PR list capped at $PR_LIMIT; some PRs may be missing"
         fi
     else
-        GH_STATE=failed
-        note "gh pr list failed: PR state unknown; GitHub columns show ?"
+        FORGE_STATE=failed
+        note "$FORGE_CLI PR list failed: PR state unknown; forge columns show ?"
     fi
 fi
 
@@ -417,9 +471,18 @@ fi
 
 # Merged PRs are only needed to tell whether a state-file Issue is actually finished.
 MERGED_LIMIT=100
-if [ "$_nstates" -gt 0 ] && [ "$GH_STATE" = ok ]; then
-    _out=$(cd "$ROOT" && gh pr list --state merged --limit "$MERGED_LIMIT" --json number,headRefName,closingIssuesReferences \
-        --jq '.[] | [.number, .headRefName, ((.closingIssuesReferences // []) | map(.number | tostring) | join(",") | if . == "" then "-" else . end)] | @tsv' 2>/dev/null) || _out=""
+if [ "$_nstates" -gt 0 ] && [ "$FORGE_STATE" = ok ]; then
+    case "$FORGE" in
+        github)
+            _out=$(cd "$ROOT" && gh pr list --state merged --limit "$MERGED_LIMIT" --json number,headRefName,closingIssuesReferences \
+                --jq '.[] | [.number, .headRefName, ((.closingIssuesReferences // []) | map(.number | tostring) | join(",") | if . == "" then "-" else . end)] | @tsv' 2>/dev/null) || _out=""
+            ;;
+        gitlab)
+            _out=$(cd "$ROOT" && glab mr list --merged --per-page "$MERGED_LIMIT" --output json \
+                --jq '.[] | [.iid, .source_branch, '"$MR_CLOSES"'] | @tsv' 2>/dev/null) || _out=""
+            _out=$(printf '%s\n' "$_out" | glab_tsv)
+            ;;
+    esac
     printf '%s\n' "$_out" | tr -d '\r' | grep -v '^$' > "$MERGED" || true
     if [ "$(wc -l < "$MERGED" | tr -d " ")" -ge "$MERGED_LIMIT" ]; then
         note "merged PR list capped at $MERGED_LIMIT; an older merged PR may be missed and its Issue shown as unfinished"
@@ -462,11 +525,24 @@ issue_claimed() { grep -Fqx -- "$1" "$CLAIMED_ISSUE"; }
 
 # --- decision ----------------------------------------------------------------
 
+# The commands and names quoted in reasons, per forge.
+if [ "$FORGE" = gitlab ]; then
+    FORGE_NAME=GitLab
+    cmd_checks() { printf 'glab ci status --wait for MR !%s' "$1"; }
+    cmd_view() { printf 'glab mr view %s' "$1"; }
+    CI_STALL="if it stays pending, no runner may be picking the pipeline up"
+else
+    FORGE_NAME=GitHub
+    cmd_checks() { printf 'gh pr checks %s --watch' "$1"; }
+    cmd_view() { printf 'gh pr view %s' "$1"; }
+    CI_STALL="if they stay pending, Actions may be disabled or out of minutes"
+fi
+
 # Inputs are the d_* globals set by the caller; outputs NEXT and REASON.
 decide_next() {
     NEXT=""; REASON=""
     _pr_known=1
-    [ "$GH_STATE" = ok ] || _pr_known=0
+    [ "$FORGE_STATE" = ok ] || _pr_known=0
 
     if [ "$d_orphan" = 1 ]; then
         NEXT="/worktree-sweep"; REASON="orphaned worktree directory"
@@ -487,20 +563,20 @@ decide_next() {
         elif [ "$d_review" = CHANGES_REQUESTED ]; then
             NEXT="/pr-fix $d_pr"; REASON="changes requested"
         elif [ "$d_checks" = pending ]; then
-            NEXT=wait; REASON="checks running (gh pr checks $d_pr --watch); if they stay pending, Actions may be disabled or out of minutes: /ci-review $d_pr"
+            NEXT=wait; REASON="checks running ($(cmd_checks "$d_pr")); $CI_STALL: /ci-review $d_pr"
         elif [ "$d_mergeable" = UNKNOWN ]; then
             NEXT=wait; REASON="mergeability not computed yet; re-run"
         elif [ "$d_review" = APPROVED ]; then
             NEXT="/pr-land $d_pr"; REASON="approved, checks green"
             [ "$d_mergestate" = BEHIND ] && REASON="$REASON; behind base, update first if protection requires"
         elif [ "$d_review" = REVIEW_REQUIRED ]; then
-            NEXT="/pr-review $d_pr"; REASON="review required by branch protection; approval must come from GitHub"
+            NEXT="/pr-review $d_pr"; REASON="review required by branch protection; approval must come from $FORGE_NAME"
         elif [ "$d_mergestate" = BLOCKED ]; then
-            NEXT=wait; REASON="blocked by branch protection (merge queue or a required check); see gh pr view $d_pr"
+            NEXT=wait; REASON="blocked by branch protection (merge queue or a required check); see $(cmd_view "$d_pr")"
         elif [ "$d_review" = NONE ]; then
             NEXT="/pr-review $d_pr"; REASON="not reviewed yet (or /pr-land $d_pr to skip review)"
         else
-            NEXT=wait; REASON="PR state $d_prstate; see gh pr view $d_pr"
+            NEXT=wait; REASON="PR state $d_prstate; see $(cmd_view "$d_pr")"
         fi
     fi
     if [ -z "$NEXT" ] && [ -n "$d_wt" ] && [ "$d_wt" != "-" ]; then
@@ -539,14 +615,14 @@ decide_next() {
         NEXT="-"; REASON="done: PR #$d_mergedpr merged; state file lacks DONE"
     fi
     if [ -z "$NEXT" ] && [ "$d_kind" = state ]; then
-        NEXT="/ship-issues --resume"; REASON="listed in state file, no local or GitHub signal"
+        NEXT="/ship-issues --resume"; REASON="listed in state file, no local or $FORGE_NAME signal"
     fi
     if [ -z "$NEXT" ]; then
         NEXT=wait; REASON="no actionable signal"
     fi
 
     if [ "$_pr_known" -eq 0 ] && [ "$d_kind" != orphan ]; then
-        REASON="$REASON; GitHub state unknown"
+        REASON="$REASON; $FORGE_NAME state unknown"
     fi
     if [ -n "$INVOKED_WT" ] && [ "$d_wt" = "$INVOKED_WT" ]; then
         case "$NEXT" in
@@ -597,7 +673,7 @@ fill_from_wt() {  # sets d_wt d_dirty d_agent d_orphan from a WTS line
 }
 
 unknown_pr_cols() {
-    if [ "$GH_STATE" != ok ]; then
+    if [ "$FORGE_STATE" != ok ]; then
         d_prstate="?"; d_checks="?"; d_review="?"
     fi
 }
@@ -717,8 +793,9 @@ done < "$STATES"
 
 # --- output ------------------------------------------------------------------
 
-printf '# repo\troot\trepository\tbase\tinvoked\tfetch\tgh\n'
-printf 'repo\t%s\t%s\t%s\t%s\t%s\t%s\n' "$ROOT" "${NWO:--}" "${BASE:--}" "$INVOKED" "$FETCH_STATE" "$GH_STATE"
+printf '# repo\troot\trepository\tbase\tinvoked\tfetch\tforge\n'
+if [ "$FORGE_STATE" = ok ]; then _forge_col=$FORGE; else _forge_col=$FORGE_STATE; fi
+printf 'repo\t%s\t%s\t%s\t%s\t%s\t%s\n' "$ROOT" "${NWO:--}" "${BASE:--}" "$INVOKED" "$FETCH_STATE" "$_forge_col"
 
 N_ROWS=$(wc -l < "$ROWS" | tr -d " ")
 if [ "$N_ROWS" -gt 0 ]; then

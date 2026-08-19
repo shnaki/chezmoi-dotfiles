@@ -150,13 +150,33 @@ recently_touched() {
     [ -n "$(find "$_gd" "$_gd/logs" -maxdepth 1 -name HEAD -mmin "-$RECENT_MINUTES" 2>/dev/null)" ]
 }
 
-# Whether `gh` can answer questions about merged PRs. Decided once so that a branch
-# whose upstream is gone is reported as "gh could not confirm" rather than "no merged
-# PR found" when gh is missing, unauthenticated, or offline.
-GH_OK=0
-if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-    GH_OK=1
-fi
+# Which forge CLI (gh for GitHub, glab for GitLab) can answer questions about merged
+# PRs is decided per repository by forge-detect.sh, so that a branch whose upstream is
+# gone is reported as "<cli> could not confirm" rather than "no merged PR found" when
+# the CLI is missing, unauthenticated, or offline.
+_lib=$(dirname "$0")/forge-detect.sh
+[ -f "$_lib" ] || _lib=$(dirname "$0")/executable_forge-detect.sh
+[ -f "$_lib" ] || _lib=$HOME/.claude/scripts/forge-detect.sh
+. "$_lib"
+
+# merged_pr_for_branch ROOT BRANCH -> prints the number of a merged PR/MR whose head is
+# BRANCH (empty when none); returns 1 when the query itself failed.
+merged_pr_for_branch() {
+    case "$FORGE" in
+        github)
+            _pr=$(cd "$1" && gh pr list --head "$2" --state merged --limit 1 \
+                --json number --jq '.[0].number' 2>/dev/null) || return 1
+            ;;
+        gitlab)
+            _pr=$(cd "$1" && glab mr list --merged --source-branch "$2" --per-page 1 \
+                --output json --jq '.[0].iid' 2>/dev/null | tr -d '"') || return 1
+            ;;
+        *) return 1 ;;
+    esac
+    _pr=$(printf '%s' "$_pr" | tr -d '\r')
+    [ "$_pr" != null ] || _pr=""
+    printf '%s' "$_pr"
+}
 
 # Delete a directory, retrying once after a pause. On Windows a sharing violation from
 # an antivirus scan, the search indexer, or a file watcher is usually gone in seconds;
@@ -336,6 +356,9 @@ sweep_branches() {
         return 0
     fi
 
+    # Decided once per repository; FORGE stays empty when no CLI can answer.
+    forge_detect "$_root" || FORGE=""
+
     _current=$(git -C "$_root" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
     _checked_out=$(git -C "$_root" worktree list --porcelain 2>/dev/null |
         sed -n 's|^branch refs/heads/||p')
@@ -379,17 +402,16 @@ sweep_branches() {
         fi
 
         # Upstream is gone but the branch is not merged: most likely a squash-merged
-        # PR. Only force-delete when GitHub confirms the PR was actually merged.
-        if [ "$GH_OK" -eq 0 ]; then
-            keep "$_br" "upstream gone but unmerged; gh could not confirm (missing or unauthenticated)"
+        # PR. Only force-delete when the forge confirms the PR was actually merged.
+        if [ -z "$FORGE" ]; then
+            keep "$_br" "upstream gone but unmerged; forge could not confirm ($FORGE_ERROR)"
             continue
         fi
-        if ! _pr=$(cd "$_root" && gh pr list --head "$_br" --state merged --limit 1 \
-                --json number --jq '.[0].number' 2>/dev/null); then
-            keep "$_br" "upstream gone but unmerged; gh could not confirm (query failed, offline?)"
+        if ! _pr=$(merged_pr_for_branch "$_root" "$_br"); then
+            keep "$_br" "upstream gone but unmerged; $FORGE_CLI could not confirm (query failed, offline?)"
             continue
         fi
-        if [ -z "$_pr" ] || [ "$_pr" = "null" ]; then
+        if [ -z "$_pr" ]; then
             keep "$_br" "upstream gone but unmerged, and no merged PR found"
             continue
         fi
