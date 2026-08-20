@@ -26,8 +26,9 @@
 | [`handoff`](#handoff) | 作業の引継ぎ文書を書く / 読んで再開する | `--resume [file]`（任意）+ メモ | `/handoff` のみ |
 | [`release-cut`](#release-cut) | 前回リリース以降のマージ済み PR から版と release notes を起こし、GitHub release を作る | `--dry-run` / `--tag <version>` / `--draft` / `-R owner/repo`（任意） | `/release-cut` のみ |
 | [`repo-bootstrap`](#repo-bootstrap) | ラベルセット・PR / Issue テンプレート・CLAUDE.md 雛形を無いものだけ足す | `--dry-run` / `-R owner/repo`（任意） | `/repo-bootstrap` のみ |
+| [`repo-cli`](#repo-cli) | 自然言語の指示を gh / glab コマンドに変換して実行する（既定は読み取り専用） | `--write`（任意）+ 自然言語の指示 | `/repo-cli` のみ |
 
-`cm` 以外の 21 は `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
+`cm` 以外の 22 は `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
 起動しません。`cm` だけは `user-invocable: true` で、コミット時にモデルからも選ばれます。
 
 定義同士の整合（frontmatter、argument-hint とこの表、`~/.claude/...` のパス参照、SKILL.md が
@@ -221,7 +222,7 @@ gh より JSON 出力の範囲が狭く、MR が閉じる Issue・approvals・di
 ## GitLab で使う
 
 スキル本文は `gh` のコマンドで書いてあり、GitLab では **同じ手順を `glab` に読み替えて**
-実行します。GitHub 版と GitLab 版を別スキルにはしていません（21 スキルのロジックが二重に
+実行します。GitHub 版と GitLab 版を別スキルにはしていません（22 スキルのロジックが二重に
 なり、直すたびに両方を触ることになるため）。仕組みは 3 つだけです。
 
 1. `scripts/forge-detect.sh` —— 各スキルが最初に 1 回だけ実行します。`origin` のホストが
@@ -264,7 +265,7 @@ create` / `glab label edit --label-id` / `glab label delete` を使い、グル�
 
 | スキル | Codex での扱い |
 | --- | --- |
-| `cm` `triage-notes` `issue-refine` `issue-pr` `pr-ready` `pr-review` `ci-review` `pr-fix` `pr-respond` `pr-describe` `pr-land` `label-apply` `backlog-review` `backlog-apply` `handoff` `release-cut` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` / `pr-ready --merge` の `pr-land` 参照と、`label-apply` 系の `labeling-rules.md` 参照は `~/.claude` のパスなので解決しない。`issue-pr` / `pr-fix` / `pr-ready` の隔離 worktree は Claude Code の EnterWorktree 前提なので、Codex では `git worktree add` を手で行う。`handoff` の `~/.claude/handoff/` は単なるディレクトリなので Codex からも読み書きできる |
+| `cm` `triage-notes` `issue-refine` `issue-pr` `pr-ready` `pr-review` `ci-review` `pr-fix` `pr-respond` `pr-describe` `pr-land` `label-apply` `backlog-review` `backlog-apply` `handoff` `release-cut` `repo-cli` | `git` と `gh` にしか依存しないため概ね動く（[前提ツール](#前提ツール)）。ただし `issue-pr --merge` / `pr-ready --merge` の `pr-land` 参照と、`label-apply` 系の `labeling-rules.md` 参照は `~/.claude` のパスなので解決しない。`issue-pr` / `pr-fix` / `pr-ready` の隔離 worktree は Claude Code の EnterWorktree 前提なので、Codex では `git worktree add` を手で行う。`handoff` の `~/.claude/handoff/` は単なるディレクトリなので Codex からも読み書きできる |
 | `worktree-sweep` `label-sync` `work-status` `repo-bootstrap` | `sh` / `git` / `gh`（GitLab では `glab`）にしか依存しない。`~/.claude/scripts/*.sh` と `~/.claude/forge/gitlab.md` は Import の対象外なので、Codex 側では実体が要る |
 | `ship-issues` `ship-notes` | Claude Code の Agent tool と `isolation: "worktree"` が前提。Codex には対応機能が無いため動かない |
 
@@ -839,3 +840,19 @@ checkout / push をしない。記録するだけ）。
   Actions の無料枠（billing 失敗は `infrastructure` 扱いで `/pr-land --ignore-checks`）
 - `--dry-run` は計画で止まる（`label-sync.sh --dry-run` も含む）。`-R owner/repo` は `gh` と
   `label-sync.sh` に渡す。ローカルファイルはカレントがその checkout のときだけ書く
+
+## repo-cli
+
+自然言語の指示を `gh` / `glab` のコマンドに変換して実行します。専用スキルの無い単発の
+問い合わせ（「open な PR を一覧して」「issue 82 を見せて」）の汎用の入口です。
+
+- **既定は読み取り専用**。書き込み（create / edit / close / merge / comment、rerun 等の
+  実行系、ローカルを変える checkout も含む）の指示は実行せず、叩くべきコマンドを提示して
+  `--write` 付きの再実行を案内する。迷うものは書き込み側に倒す
+- `--write` を付けると書き込みも実行するが、各コマンドを実行前に本文で提示して合意を
+  取ってから 1 件ずつ実行する（複数の書き込みを 1 回の合意でまとめない）。読み取り系は
+  どちらのモードでも確認なしで即実行
+- `gh api` は読み取りでも使わない。GitLab では `gitlab.md` が許す `glab api -X GET` のみ。
+  API の書き込みは `--write` があっても常に拒否
+- 解釈が実質的に分かれる指示は当て推量で実行せず、候補コマンドを提示して質問する。
+  実行したコマンドは必ず報告に載せる
