@@ -25,10 +25,11 @@
 | [`backlog-apply`](#backlog-apply) | backlog-review の分類を GitHub に反映する（close / 質問コメント / status ラベル） | `--dry-run`（任意）+ Issue 番号（任意） | `/backlog-apply` のみ |
 | [`handoff`](#handoff) | 作業の引継ぎ文書を書く / 読んで再開する | `--resume [file]`（任意）+ メモ | `/handoff` のみ |
 | [`release-cut`](#release-cut) | 前回リリース以降のマージ済み PR から版と release notes を起こし、GitHub release を作る | `--dry-run` / `--tag <version>` / `--draft` / `-R owner/repo`（任意） | `/release-cut` のみ |
+| [`repo-init`](#repo-init) | git init と空の初期コミットでローカルリポジトリを作る | パス（任意） | `/repo-init` のみ |
 | [`repo-bootstrap`](#repo-bootstrap) | ラベルセット・PR / Issue テンプレート・CLAUDE.md 雛形を無いものだけ足す | `--dry-run` / `-R owner/repo`（任意） | `/repo-bootstrap` のみ |
 | [`repo-cli`](#repo-cli) | 自然言語の指示を gh / glab コマンドに変換して実行する（既定は読み取り専用） | `--write`（任意）+ 自然言語の指示 | `/repo-cli` のみ |
 
-`cm` 以外の 22 は `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
+`cm` 以外の 23 は `disable-model-invocation: true` を持ち、スラッシュコマンドからしか
 起動しません。`cm` だけは `user-invocable: true` で、コミット時にモデルからも選ばれます。
 
 定義同士の整合（frontmatter、argument-hint とこの表、`~/.claude/...` のパス参照、SKILL.md が
@@ -84,6 +85,7 @@ open Issue 群 ─/backlog-review─> ready / in progress / blocked / duplicate 
                                  ──duplicate / obsolete / already implemented / needs-info / blocked──> /backlog-apply
                                                                                     （close・質問コメント・status ラベル）
 
+新規ディレクトリ ─/repo-init─> ローカルリポジトリ（空の Initial commit のみ）
 新規リポジトリ ─/repo-bootstrap─> label-sync + PR / Issue テンプレート + CLAUDE.md 雛形（無いものだけ）─> /pr-ready
 
 任意の作業 ─/handoff─> ~/.claude/handoff/<repo>-<日時>.md（+ .patch）
@@ -821,6 +823,19 @@ checkout / push をしない。記録するだけ）。
 - インライン返信と thread の resolve は `gh api` の write なのでしない。レビュアーが読んで自分で
   resolve する
 - `--dry-run` はコメント案で止まる。マージ済み / closed の PR には投稿しない
+
+## repo-init
+
+`git init` と空の初期コミット（`git commit --allow-empty -m "Initial commit"`）だけで
+ローカルリポジトリを作ります。空の root commit を置くのは、最初の実コミットも含めて
+後からリベース・squash できるようにするためです。
+
+- 引数はパス（任意）。無ければカレントディレクトリ、あれば無いディレクトリも作る
+- 既に git リポジトリの中なら `git init` を重ね掛けせず止まって報告する
+- ブランチ名は指定せず `init.defaultBranch` の設定に従う
+- 既存ファイルがあっても stage しない（コミットは `/cm` の仕事）。メッセージは
+  `Initial commit` 固定で、Conventional Commits の対象外
+- リモート作成・push・`gh` / `glab` は使わない。forge 側の整備は `/repo-bootstrap`
 
 ## repo-bootstrap
 
